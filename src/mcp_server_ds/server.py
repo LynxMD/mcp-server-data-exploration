@@ -29,6 +29,10 @@ import sklearn
 import statsmodels.api as sm
 from io import StringIO
 import sys
+import pyarrow
+from PIL import Image
+import pytesseract
+import pymupdf
 
 
 logger = logging.getLogger(__name__)
@@ -187,7 +191,9 @@ class ScriptRunner:
             self.notes.append(f"Running script: \n{script}")
             # pylint: disable=exec-used
             exec(script, \
-                {'pd': pd, 'np': np, 'scipy': scipy, 'sklearn': sklearn, 'statsmodels': sm}, \
+                {'pd': pd, 'np': np, 'scipy': scipy, 'sklearn': sklearn, 'statsmodels': sm, 'pyarrow': pyarrow, 'Image': Image, # PIL.Image
+                 'pytesseract': pytesseract, 'pymupdf': pymupdf, \
+}, \
                 local_dict)
             std_out_script = stdout_capture.getvalue()
         except Exception as e:
