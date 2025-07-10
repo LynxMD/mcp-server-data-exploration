@@ -1,27 +1,13 @@
-from enum import Enum
 import logging
 from typing import Optional, List
+import glob
+import os
+from pathlib import Path
 
-## import mcp server
-from mcp.server.models import InitializationOptions
-from mcp.types import (
-    TextContent,
-    Tool,
-    Resource,
-    INTERNAL_ERROR,
-    Prompt,
-    PromptArgument,
-    EmbeddedResource,
-    GetPromptResult,
-    PromptMessage,
-)
-from mcp.server import NotificationOptions, Server
-from mcp.shared.exceptions import McpError
-from pydantic import AnyUrl
-import mcp.server.stdio
-from pydantic import BaseModel
+# FastMCP 2.0 import
+from fastmcp import FastMCP
 
-## import common data analysis libraries
+# Data analysis libraries
 import pandas as pd
 import numpy as np
 import scipy
@@ -34,18 +20,13 @@ from PIL import Image
 import pytesseract
 import pymupdf
 
-
 logger = logging.getLogger(__name__)
-logger.info("Starting mini data science exploration server")
+logger.info("Starting FastMCP 2.0 data science exploration server")
 
-### Prompt templates
-class DataExplorationPrompts(str, Enum):
-    EXPLORE_DATA = "explore-data"
+# Create FastMCP instance
+mcp = FastMCP("Data Science Explorer 🔬")
 
-class PromptArgs(str, Enum):
-    CSV_PATH = "csv_path"
-    TOPIC = "topic"
-
+# Prompt template (preserved from original)
 PROMPT_TEMPLATE = """
 You are a professional Data Scientist tasked with performing exploratory data analysis on a dataset. Your goal is to provide insightful analysis while ensuring stability and manageable result sizes.
 
@@ -63,7 +44,7 @@ Your analysis should focus on the following topic:
 
 You have access to the following tools for your analysis:
 1. load_csv: Use this to load the CSV file.
-2. run-script: Use this to execute Python scripts on the MCP server.
+2. run_script: Use this to execute Python scripts on the MCP server.
 
 Please follow these steps carefully:
 
@@ -112,70 +93,25 @@ Remember to prioritize stability and manageability in your analysis. If at any p
 Please begin your analysis by loading the CSV file and providing an initial exploration of the dataset.
 """
 
-
-### Data Exploration Tools Description & Schema
-class DataExplorationTools(str, Enum):
-    LOAD_CSV = "load_csv"
-    RUN_SCRIPT = "run_script"
-
-
-LOAD_CSV_TOOL_DESCRIPTION = """
-Load CSV File Tool
-
-Purpose:
-Load a local CSV file into a DataFrame.
-
-Usage Notes:
-	•	If a df_name is not provided, the tool will automatically assign names sequentially as df_1, df_2, and so on.
-"""
-
-class LoadCsv(BaseModel):
-    csv_path: str
-    df_name: Optional[str] = None
-
-
-
-RUN_SCRIPT_TOOL_DESCRIPTION = """
-Python Script Execution Tool
-
-Purpose:
-Execute Python scripts for specific data analytics tasks.
-
-Allowed Actions
-	1.	Print Results: Output will be displayed as the script’s stdout.
-	2.	[Optional] Save DataFrames: Store DataFrames in memory for future use by specifying a save_to_memory name.
-
-Prohibited Actions
-	1.	Overwriting Original DataFrames: Do not modify existing DataFrames to preserve their integrity for future tasks.
-	2.	Creating Charts: Chart generation is not permitted.
-"""
-
-class RunScript(BaseModel):
-    script: str
-    save_to_memory: Optional[List[str]] = None
-
-
-### Python (Pandas, NumPy, SciPy) Script Runner
+# ScriptRunner class (preserved from original)
 class ScriptRunner:
     def __init__(self):
         self.data = {}
         self.df_count = 0
         self.notes: list[str] = []
 
-    def load_csv(self, csv_path: str, df_name:str = None):
+    def load_csv(self, csv_path: str, df_name: str = None):
         self.df_count += 1
         if not df_name:
             df_name = f"df_{self.df_count}"
         try:
             self.data[df_name] = pd.read_csv(csv_path)
             self.notes.append(f"Successfully loaded CSV into dataframe '{df_name}'")
-            return [
-                TextContent(type="text", text=f"Successfully loaded CSV into dataframe '{df_name}'")
-            ]
+            return f"Successfully loaded CSV into dataframe '{df_name}'"
         except Exception as e:
-            raise McpError(
-                INTERNAL_ERROR, f"Error loading CSV: {str(e)}"
-            ) from e
+            error_msg = f"Error loading CSV: {str(e)}"
+            self.notes.append(error_msg)
+            raise Exception(error_msg)
 
     def safe_eval(self, script: str, save_to_memory: Optional[List[str]] = None):
         """safely run a script, return the result if valid, otherwise return the error message"""
@@ -190,14 +126,17 @@ class ScriptRunner:
             sys.stdout = stdout_capture
             self.notes.append(f"Running script: \n{script}")
             # pylint: disable=exec-used
-            exec(script, \
-                {'pd': pd, 'np': np, 'scipy': scipy, 'sklearn': sklearn, 'statsmodels': sm, 'pyarrow': pyarrow, 'Image': Image, # PIL.Image
-                 'pytesseract': pytesseract, 'pymupdf': pymupdf, \
-}, \
+            exec(script, 
+                {'pd': pd, 'np': np, 'scipy': scipy, 'sklearn': sklearn, 'statsmodels': sm, 'pyarrow': pyarrow, 'Image': Image,
+                 'pytesseract': pytesseract, 'pymupdf': pymupdf}, 
                 local_dict)
+            sys.stdout = old_stdout
             std_out_script = stdout_capture.getvalue()
         except Exception as e:
-            raise McpError(INTERNAL_ERROR, f"Error running script: {str(e)}") from e
+            sys.stdout = old_stdout
+            error_msg = f"Error running script: {str(e)}"
+            self.notes.append(error_msg)
+            raise Exception(error_msg)
 
         # check if the result is a dataframe
         if save_to_memory:
@@ -207,127 +146,91 @@ class ScriptRunner:
 
         output = std_out_script if std_out_script else "No output"
         self.notes.append(f"Result: {output}")
-        return [
-            TextContent(type="text", text=f"print out result: {output}")
-        ]
+        return f"Script executed successfully. Output: {output}"
 
-### MCP Server Definition
-async def main():
-    script_runner = ScriptRunner()
-    server = Server("local-mini-ds")
+# Global script runner instance
+script_runner = ScriptRunner()
 
-    @server.list_resources()
-    async def handle_list_resources() -> list[Resource]:
-        logger.debug("Handling list_resources request")
-        return [
-            Resource(
-                uri="data-exploration://notes",
-                name="Data Exploration Notes",
-                description="Notes generated by the data exploration server",
-                mimeType="text/plain",
-            )
-        ]
+# === PROMPTS ===
+@mcp.prompt
+def explore_data(csv_path: str, topic: str = "general data exploration") -> str:
+    """A prompt to explore a CSV dataset as a data scientist."""
+    return PROMPT_TEMPLATE.format(csv_path=csv_path, topic=topic)
 
-    @server.read_resource()
-    async def handle_read_resource(uri: AnyUrl) -> str:
-        logger.debug(f"Handling read_resource request for URI: {uri}")
-        if uri == "data-exploration://notes":
-            return "\n".join(script_runner.notes)
-        else:
-            raise ValueError(f"Unknown resource: {uri}")
+# === TOOLS ===
+@mcp.tool
+def load_csv(csv_path: str, df_name: str = None) -> str:
+    """Load a local CSV file into a DataFrame.
+    
+    Args:
+        csv_path: Path to the CSV file
+        df_name: Optional name for the DataFrame. If not provided, will auto-assign df_1, df_2, etc.
+    
+    Returns:
+        Success message with DataFrame name
+    """
+    return script_runner.load_csv(csv_path, df_name)
 
-    @server.list_prompts()
-    async def handle_list_prompts() -> list[Prompt]:
-        logger.debug("Handling list_prompts request")
-        return [
-            Prompt(
-                name=DataExplorationPrompts.EXPLORE_DATA,
-                description="A prompt to explore a csv dataset as a data scientist",
-                arguments=[
-                    PromptArgument(
-                        name=PromptArgs.CSV_PATH,
-                        description="The path to the csv file",
-                        required=True,
-                    ),
-                    PromptArgument(
-                        name=PromptArgs.TOPIC,
-                        description="The topic the data exploration need to focus on",
-                        required=False,
-                    ),
-                ],
-            )
-        ]
+@mcp.tool
+def run_script(script: str, save_to_memory: List[str] = None) -> str:
+    """Execute Python scripts for data analytics tasks.
+    
+    Args:
+        script: The Python script to execute
+        save_to_memory: Optional list of DataFrame names to save to memory
+    
+    Returns:
+        Script execution result
+    """
+    return script_runner.safe_eval(script, save_to_memory)
 
-    @server.get_prompt()
-    async def handle_get_prompt(name: str, arguments: dict[str, str] | None) -> GetPromptResult:
-        logger.debug(f"Handling get_prompt request for {name} with args {arguments}")
-        if name != DataExplorationPrompts.EXPLORE_DATA:
-            logger.error(f"Unknown prompt: {name}")
-            raise ValueError(f"Unknown prompt: {name}")
+# === RESOURCES ===
+@mcp.resource("data-exploration://notes")
+def get_exploration_notes() -> str:
+    """Notes generated by the data exploration server."""
+    return "\n".join(script_runner.notes) if script_runner.notes else "No notes yet"
 
-        if not arguments or PromptArgs.CSV_PATH not in arguments:
-            logger.error("Missing required argument: csv_path")
-            raise ValueError("Missing required argument: csv_path")
+@mcp.resource("data-exploration://csv-files") 
+def list_csv_files() -> str:
+    """List available CSV files in common data directories."""
+    common_paths = ["~/code/ai/data"]  # , ["~/Downloads", "~/tmp"]
+    csv_files = []
+    
+    for path in common_paths:
+        expanded_path = os.path.expanduser(path)
+        if os.path.exists(expanded_path):
+            csv_files.extend(glob.glob(f"{expanded_path}/*.csv"))
+    
+    if not csv_files:
+        return "No CSV files found in common directories (~/code/ai/data, ~/Downloads, ~/tmp)"
 
-        csv_path = arguments[PromptArgs.CSV_PATH]
-        topic = arguments.get(PromptArgs.TOPIC)
-        prompt = PROMPT_TEMPLATE.format(csv_path=csv_path, topic=topic)
+    return "CSV file listing:\n" + "\n".join(csv_files)
 
-        logger.debug(f"Generated prompt template for csv_path: {csv_path} and topic: {topic}")
-        return GetPromptResult(
-            description=f"Data exploration template for {topic}",
-            messages=[
-                PromptMessage(
-                    role="user",
-                    content=TextContent(type="text", text=prompt.strip()),
-                )
-            ],
-        )
+@mcp.resource("data-exploration://dataframes")
+def list_dataframes() -> str:
+    """List currently loaded DataFrames with their information."""
+    if not script_runner.data:
+        return "No DataFrames loaded"
+    
+    info = ["Currently loaded DataFrames:"]
+    for name, df in script_runner.data.items():
+        info.append(f"- {name}: {df.shape[0]} rows, {df.shape[1]} columns")
+        info.append(f"  Columns: {', '.join(df.columns[:5])}{'...' if len(df.columns) > 5 else ''}")
+    
+    return "\n".join(info)
 
-    @server.list_tools()
-    async def handle_list_tools() -> list[Tool]:
-        logger.debug("Handling list_tools request")
-        return [
-            Tool(
-                name = DataExplorationTools.LOAD_CSV,
-                description = LOAD_CSV_TOOL_DESCRIPTION,
-                inputSchema = LoadCsv.model_json_schema(),
-            ),
-            Tool(
-                name=DataExplorationTools.RUN_SCRIPT,
-                description=RUN_SCRIPT_TOOL_DESCRIPTION,
-                inputSchema=RunScript.model_json_schema(),
-            )
-        ]
+@mcp.resource("data-exploration://history")
+def get_analysis_history() -> str:
+    """Get history of recent analysis operations."""
+    if not script_runner.notes:
+        return "No analysis history yet"
+    
+    return "Recent analysis history:\n" + "\n".join(script_runner.notes[-10:])
 
-    @server.call_tool()
-    async def handle_call_tool(
-        name: str, arguments: dict | None
-    ) -> list[TextContent | EmbeddedResource]:
-        logger.debug(f"Handling call_tool request for {name} with args {arguments}")
-        if name == DataExplorationTools.LOAD_CSV:
-            csv_path = arguments.get("csv_path")
-            df_name = arguments.get("df_name")
-            return script_runner.load_csv(csv_path, df_name)
-        elif name == DataExplorationTools.RUN_SCRIPT:
-            script = arguments.get("script")
-            df_name = arguments.get("df_name")
-            return script_runner.safe_eval(script, df_name)
-        else:
-            raise McpError(INTERNAL_ERROR, f"Unknown tool: {name}")
-        return None
+# === MAIN ENTRY POINT ===
+def main():
+    """Main entry point for the FastMCP 2.0 server."""
+    mcp.run()
 
-    async with mcp.server.stdio.stdio_server() as (read_stream, write_stream):
-        logger.debug("Server running with stdio transport")
-        await server.run(
-            read_stream,
-            write_stream,
-            InitializationOptions(
-                server_name="data-exploration-server",
-                server_version="0.1.0",
-                capabilities=server.get_capabilities(
-                    notification_options=NotificationOptions(),
-                    experimental_capabilities={},
-                ),
-            ),
-        )
+if __name__ == "__main__":
+    main()
