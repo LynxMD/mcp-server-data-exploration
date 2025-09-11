@@ -136,7 +136,7 @@ class ScriptRunner:
             sys.stdout = old_stdout
             error_msg = f"Error running script: {str(e)}"
             self.notes.append(error_msg)
-            raise Exception(error_msg)
+            raise Exception(str(e))
 
         # check if the result is a dataframe
         if save_to_memory:
@@ -146,7 +146,7 @@ class ScriptRunner:
 
         output = std_out_script if std_out_script else "No output"
         self.notes.append(f"Result: {output}")
-        return f"Script executed successfully. Output: {output}"
+        return output
 
 # Global script runner instance
 script_runner = ScriptRunner()
