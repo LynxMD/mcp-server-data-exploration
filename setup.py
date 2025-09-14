@@ -7,24 +7,30 @@ import sys
 from pathlib import Path
 import re
 import time
+
+
 def run_command(cmd, check=True):
     """Run a shell command and return output."""
     try:
-        result = subprocess.run(cmd, shell=True, check=check, capture_output=True, text=True)
+        result = subprocess.run(
+            cmd, shell=True, check=check, capture_output=True, text=True
+        )
         return result.stdout.strip()
     except subprocess.CalledProcessError as e:
         print(f"Error running command '{cmd}': {e}")
         return None
 
+
 def ask_permission(question):
     """Ask user for permission."""
     while True:
         response = input(f"{question} (y/n): ").lower()
-        if response in ['y', 'yes']:
+        if response in ["y", "yes"]:
             return True
-        if response in ['n', 'no']:
+        if response in ["n", "no"]:
             return False
         print("Please answer 'y' or 'n'")
+
 
 def check_uv():
     """Check if uv is installed and install if needed."""
@@ -36,6 +42,7 @@ def check_uv():
         else:
             sys.exit("uv is required to continue")
 
+
 def setup_venv():
     """Create virtual environment if it doesn't exist."""
     if not Path(".venv").exists():
@@ -46,11 +53,13 @@ def setup_venv():
         else:
             sys.exit("Virtual environment is required to continue")
 
+
 def sync_dependencies():
     """Sync project dependencies."""
     print("Syncing dependencies...")
     run_command("uv sync")
     print("Dependencies synced successfully")
+
 
 def check_claude_desktop():
     """Check if Claude desktop app is installed."""
@@ -61,16 +70,24 @@ def check_claude_desktop():
         if not ask_permission("Continue after installing Claude?"):
             sys.exit("Claude desktop app is required to continue")
 
+
 def setup_claude_config():
     """Setup Claude desktop config file."""
-    config_path = Path("~/Library/Application Support/Claude/claude_desktop_config.json").expanduser()
+    config_path = Path(
+        "~/Library/Application Support/Claude/claude_desktop_config.json"
+    ).expanduser()
     config_dir = config_path.parent
 
     if not config_dir.exists():
         config_dir.mkdir(parents=True)
 
-    config = {"mcpServers": {}} if not config_path.exists() else json.loads(config_path.read_text())
+    config = (
+        {"mcpServers": {}}
+        if not config_path.exists()
+        else json.loads(config_path.read_text())
+    )
     return config_path, config
+
 
 def build_package():
     """Build package and get wheel path."""
@@ -95,7 +112,7 @@ def build_package():
         sys.exit(f"Build failed with error code {process.returncode}")
 
     # Extract wheel file path from the combined output
-    match = re.findall(r'dist/[^\s]+\.whl', output.strip())
+    match = re.findall(r"dist/[^\s]+\.whl", output.strip())
     whl_file = match[-1] if match else None
     if not whl_file:
         sys.exit("Failed to find wheel file in build output")
@@ -104,16 +121,18 @@ def build_package():
     path = Path(whl_file).absolute()
     return str(path)
 
+
 def update_config(config_path, config, wheel_path):
     """Update Claude config with MCP server settings."""
     config.setdefault("mcpServers", {})
     config["mcpServers"]["mcp-server-ds"] = {
         "command": "uvx",
-        "args": ["--from", wheel_path, "mcp-server-ds"]
+        "args": ["--from", wheel_path, "mcp-server-ds"],
     }
 
     config_path.write_text(json.dumps(config, indent=2))
     print(f"Updated config at {config_path}")
+
 
 def restart_claude():
     """Restart Claude desktop app if running."""
@@ -128,6 +147,7 @@ def restart_claude():
         print("Starting Claude...")
         run_command("open -a Claude")
 
+
 def main():
     """Main setup function."""
     print("Starting setup...")
@@ -140,6 +160,7 @@ def main():
     update_config(config_path, config, wheel_path)
     restart_claude()
     print("Setup completed successfully!")
+
 
 if __name__ == "__main__":
     main()

@@ -13,3 +13,10 @@ repos:
       - id: debug-statements
       - id: detect-private-key
       - id: check-case-conflict
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.13.0
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
