@@ -44,6 +44,12 @@ repos:
         additional_dependencies: [types-requests]
         args: [--ignore-missing-imports, --no-strict-optional]
 
-# Note: pytest is intentionally not included in pre-commit hooks
-# Run tests manually with: uv run pytest tests/ -v
-# Or run with coverage: uv run pytest tests/ --cov=mcp_server_ds --cov-report=term-missing
+  - repo: local
+    hooks:
+      - id: pytest-check
+        name: pytest-check
+        entry: uv run pytest tests/ -v --cov=mcp_server_ds --cov-report=term-missing
+        language: system
+        stages: [pre-push]
+        pass_filenames: false
+        always_run: true
