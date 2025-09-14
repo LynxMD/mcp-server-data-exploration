@@ -9,5 +9,11 @@ wheels/
 # Virtual environments
 .venv
 
+# Coverage files
+.coverage
+coverage.xml
+htmlcov/
+.pytest_cache/
+
 # Local files
 .DS_Store
