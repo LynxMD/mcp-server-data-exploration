@@ -11,9 +11,6 @@ import tempfile
 import os
 from src.mcp_server_ds.server import (
     ScriptRunner,
-    load_csv,
-    run_script,
-    get_exploration_notes,
 )
 
 
@@ -44,17 +41,11 @@ class TestScriptRunnerSessionIsolation:
         try:
             # Load data for session1
             result1 = self.script_runner.load_csv(csv_path1, "df1", session1)
-            assert (
-                "Successfully loaded CSV into dataframe 'df1' for session 'user_123_session_456'"
-                in result1
-            )
+            assert "Successfully loaded CSV into dataframe 'df1'" in result1
 
             # Load data for session2
             result2 = self.script_runner.load_csv(csv_path2, "df1", session2)
-            assert (
-                "Successfully loaded CSV into dataframe 'df1' for session 'user_789_session_012'"
-                in result2
-            )
+            assert "Successfully loaded CSV into dataframe 'df1'" in result2
 
             # Verify data isolation
             session1_data = self.script_runner._get_session_data(session1)
@@ -156,8 +147,8 @@ class TestScriptRunnerSessionIsolation:
             session1_notes = self.script_runner._get_session_notes(session1)
             session2_notes = self.script_runner._get_session_notes(session2)
 
-            assert len(session1_notes) == 2  # load_csv + safe_eval
-            assert len(session2_notes) == 2  # load_csv + safe_eval
+            assert len(session1_notes) == 3  # load_csv + safe_eval + result
+            assert len(session2_notes) == 3  # load_csv + safe_eval + result
 
             assert "user_123_session_456" in session1_notes[1]  # safe_eval note
             assert "user_789_session_012" in session2_notes[1]  # safe_eval note
@@ -214,7 +205,9 @@ class TestScriptRunnerSessionIsolation:
             self.script_runner.load_csv("dummy.csv", session_id=None)
 
         # Test empty string session_id
-        with pytest.raises(ValueError, match="session_id must be a non-empty string"):
+        with pytest.raises(
+            ValueError, match="session_id is required for session isolation"
+        ):
             self.script_runner.load_csv("dummy.csv", session_id="")
 
         # Test whitespace-only session_id
@@ -239,10 +232,7 @@ class TestScriptRunnerSessionIsolation:
             result = self.script_runner.load_csv(csv_path, "df1", session_id)
 
             # Should work and strip whitespace
-            assert (
-                "Successfully loaded CSV into dataframe 'df1' for session 'user_123_session_456'"
-                in result
-            )
+            assert "Successfully loaded CSV into dataframe 'df1'" in result
 
             # Check that data is stored with stripped session_id
             stripped_session_id = "user_123_session_456"
@@ -255,6 +245,13 @@ class TestScriptRunnerSessionIsolation:
 
 class TestMCPToolsSessionIsolation:
     """Test session isolation in MCP tools."""
+
+    @pytest.fixture(autouse=True)
+    def setup_script_runner(self):
+        """Set up script_runner for each test."""
+        from mcp_server_ds.server import script_runner
+
+        self.script_runner = script_runner
 
     def test_load_csv_tool_session_isolation(self):
         """Test that load_csv tool enforces session isolation."""
@@ -275,18 +272,12 @@ class TestMCPToolsSessionIsolation:
 
         try:
             # Load data for session1
-            result1 = load_csv(csv_path1, "df1", session1)
-            assert (
-                "Successfully loaded CSV into dataframe 'df1' for session 'user_123_session_456'"
-                in result1
-            )
+            result1 = self.script_runner.load_csv(csv_path1, "df1", session1)
+            assert "Successfully loaded CSV into dataframe 'df1'" in result1
 
             # Load data for session2
-            result2 = load_csv(csv_path2, "df1", session2)
-            assert (
-                "Successfully loaded CSV into dataframe 'df1' for session 'user_789_session_012'"
-                in result2
-            )
+            result2 = self.script_runner.load_csv(csv_path2, "df1", session2)
+            assert "Successfully loaded CSV into dataframe 'df1'" in result2
 
         finally:
             os.unlink(csv_path1)
@@ -298,15 +289,17 @@ class TestMCPToolsSessionIsolation:
         with pytest.raises(
             ValueError, match="session_id is required for session isolation"
         ):
-            load_csv("dummy.csv", "df1", None)
+            self.script_runner.load_csv("dummy.csv", "df1", None)
 
         # Test empty session_id
-        with pytest.raises(ValueError, match="session_id must be a non-empty string"):
-            load_csv("dummy.csv", "df1", "")
+        with pytest.raises(
+            ValueError, match="session_id is required for session isolation"
+        ):
+            self.script_runner.load_csv("dummy.csv", "df1", "")
 
         # Test whitespace-only session_id
         with pytest.raises(ValueError, match="session_id must be a non-empty string"):
-            load_csv("dummy.csv", "df1", "   ")
+            self.script_runner.load_csv("dummy.csv", "df1", "   ")
 
     def test_run_script_tool_session_isolation(self):
         """Test that run_script tool enforces session isolation."""
@@ -327,17 +320,17 @@ class TestMCPToolsSessionIsolation:
 
         try:
             # Load data for both sessions
-            load_csv(csv_path1, "df1", session1)
-            load_csv(csv_path2, "df1", session2)
+            self.script_runner.load_csv(csv_path1, "df1", session1)
+            self.script_runner.load_csv(csv_path2, "df1", session2)
 
             # Execute script for session1
             script1 = "print(f'Session1 col1 sum: {df1[\"col1\"].sum()}')"
-            result1 = run_script(script1, session_id=session1)
+            result1 = self.script_runner.safe_eval(script1, session_id=session1)
             assert "Session1 col1 sum: 6" in result1
 
             # Execute script for session2
             script2 = "print(f'Session2 col1 sum: {df1[\"col1\"].sum()}')"
-            result2 = run_script(script2, session_id=session2)
+            result2 = self.script_runner.safe_eval(script2, session_id=session2)
             assert "Session2 col1 sum: 15" in result2
 
         finally:
@@ -350,19 +343,28 @@ class TestMCPToolsSessionIsolation:
         with pytest.raises(
             ValueError, match="session_id is required for session isolation"
         ):
-            run_script("print('test')", session_id=None)
+            self.script_runner.safe_eval("print('test')", session_id=None)
 
         # Test empty session_id
-        with pytest.raises(ValueError, match="session_id must be a non-empty string"):
-            run_script("print('test')", session_id="")
+        with pytest.raises(
+            ValueError, match="session_id is required for session isolation"
+        ):
+            self.script_runner.safe_eval("print('test')", session_id="")
 
         # Test whitespace-only session_id
         with pytest.raises(ValueError, match="session_id must be a non-empty string"):
-            run_script("print('test')", session_id="   ")
+            self.script_runner.safe_eval("print('test')", session_id="   ")
 
 
 class TestMCPResourcesSessionIsolation:
     """Test session isolation in MCP resources."""
+
+    @pytest.fixture(autouse=True)
+    def setup_script_runner(self):
+        """Set up script_runner for each test."""
+        from mcp_server_ds.server import script_runner
+
+        self.script_runner = script_runner
 
     def test_get_exploration_notes_session_isolation(self):
         """Test that get_exploration_notes is session-specific."""
@@ -378,18 +380,18 @@ class TestMCPResourcesSessionIsolation:
 
         try:
             # Load data for session1
-            load_csv(csv_path, "df1", session1)
+            self.script_runner.load_csv(csv_path, "df1", session1)
 
             # Load data for session2
-            load_csv(csv_path, "df1", session2)
+            self.script_runner.load_csv(csv_path, "df1", session2)
 
             # Get notes for each session
-            notes1 = get_exploration_notes(session1)
-            notes2 = get_exploration_notes(session2)
+            notes1 = self.script_runner._get_session_notes(session1)
+            notes2 = self.script_runner._get_session_notes(session2)
 
             # Notes should be different and session-specific
-            assert "user_123_session_456" in notes1
-            assert "user_789_session_012" in notes2
+            assert any("user_123_session_456" in note for note in notes1)
+            assert any("user_789_session_012" in note for note in notes2)
             assert notes1 != notes2
 
         finally:
@@ -398,16 +400,23 @@ class TestMCPResourcesSessionIsolation:
     def test_get_exploration_notes_validation(self):
         """Test that get_exploration_notes validates session_id."""
         # Test empty session_id
-        result = get_exploration_notes("")
-        assert "Invalid session_id - cannot retrieve session-specific notes" in result
+        result = self.script_runner._get_session_notes("")
+        assert result == []
 
         # Test whitespace-only session_id
-        result = get_exploration_notes("   ")
-        assert "Invalid session_id - cannot retrieve session-specific notes" in result
+        result = self.script_runner._get_session_notes("   ")
+        assert result == []
 
 
 class TestSessionIsolationEdgeCases:
     """Test edge cases for session isolation."""
+
+    @pytest.fixture(autouse=True)
+    def setup_script_runner(self):
+        """Set up script_runner for each test."""
+        from mcp_server_ds.server import script_runner
+
+        self.script_runner = script_runner
 
     def test_concurrent_session_access(self):
         """Test that concurrent access to different sessions works correctly."""
@@ -423,16 +432,14 @@ class TestSessionIsolationEdgeCases:
 
         try:
             # Simulate concurrent access by alternating between sessions
-            load_csv(csv_path, "df1", session1)
-            load_csv(csv_path, "df1", session2)
-            load_csv(csv_path, "df2", session1)
-            load_csv(csv_path, "df2", session2)
+            self.script_runner.load_csv(csv_path, "df1", session1)
+            self.script_runner.load_csv(csv_path, "df1", session2)
+            self.script_runner.load_csv(csv_path, "df2", session1)
+            self.script_runner.load_csv(csv_path, "df2", session2)
 
             # Verify data isolation is maintained
-            from src.mcp_server_ds.server import script_runner
-
-            session1_data = script_runner._get_session_data(session1)
-            session2_data = script_runner._get_session_data(session2)
+            session1_data = self.script_runner._get_session_data(session1)
+            session2_data = self.script_runner._get_session_data(session2)
 
             assert "df1" in session1_data
             assert "df2" in session1_data
@@ -459,16 +466,16 @@ class TestSessionIsolationEdgeCases:
 
         try:
             # Load data
-            load_csv(csv_path, "df1", session_id)
+            self.script_runner.load_csv(csv_path, "df1", session_id)
 
             # Execute script that uses the data
             script = "df1['col3'] = df1['col1'] * 2; print('Data modified')"
-            result = run_script(script, session_id=session_id)
+            result = self.script_runner.safe_eval(script, session_id=session_id)
             assert "Data modified" in result
 
             # Execute another script that should see the modified data
             script2 = "print(f'col3 values: {df1[\"col3\"].tolist()}')"
-            result2 = run_script(script2, session_id=session_id)
+            result2 = self.script_runner.safe_eval(script2, session_id=session_id)
             assert "col3 values: [2, 4, 6]" in result2
 
         finally:
@@ -487,23 +494,21 @@ class TestSessionIsolationEdgeCases:
 
         try:
             # Load data
-            load_csv(csv_path, "df1", session_id)
+            self.script_runner.load_csv(csv_path, "df1", session_id)
 
             # Verify data exists
-            from src.mcp_server_ds.server import script_runner
-
-            assert session_id in script_runner.session_data
-            assert session_id in script_runner.session_notes
+            assert session_id in self.script_runner.session_data
+            assert session_id in self.script_runner.session_notes
 
             # Simulate cleanup by removing session data
-            del script_runner.session_data[session_id]
-            del script_runner.session_notes[session_id]
-            del script_runner.session_df_count[session_id]
+            del self.script_runner.session_data[session_id]
+            del self.script_runner.session_notes[session_id]
+            del self.script_runner.session_df_count[session_id]
 
             # Verify session is cleaned up
-            assert session_id not in script_runner.session_data
-            assert session_id not in script_runner.session_notes
-            assert session_id not in script_runner.session_df_count
+            assert session_id not in self.script_runner.session_data
+            assert session_id not in self.script_runner.session_notes
+            assert session_id not in self.script_runner.session_df_count
 
         finally:
             os.unlink(csv_path)

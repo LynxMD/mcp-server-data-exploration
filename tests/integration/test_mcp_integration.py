@@ -9,8 +9,9 @@ class TestMCPIntegration:
 
     def test_complete_data_analysis_workflow(self, temp_csv_file):
         """Test a complete data analysis workflow."""
+        session_id = "integration_test_session"
         # Step 1: Load data
-        load_result = script_runner.load_csv(temp_csv_file, "people")
+        load_result = script_runner.load_csv(temp_csv_file, "people", session_id)
         assert "Successfully loaded CSV" in load_result
 
         # Step 2: Basic analysis
@@ -21,7 +22,9 @@ print(f"Columns: {list(people.columns)}")
 print(f"Age statistics:")
 print(people['age'].describe())
 """
-        analysis_result = script_runner.safe_eval(analysis_script)
+        analysis_result = script_runner.safe_eval(
+            analysis_script, session_id=session_id
+        )
         assert "Dataset shape: (3, 3)" in analysis_result
         assert "Columns: ['name', 'age', 'city']" in analysis_result
 
@@ -32,22 +35,25 @@ people['age_group'] = people['age'].apply(lambda x: 'young' if x < 30 else 'matu
 print(f"Age groups: {people['age_group'].value_counts().to_dict()}")
 """
         derived_result = script_runner.safe_eval(
-            derived_script, save_to_memory=["people"]
+            derived_script, save_to_memory=["people"], session_id=session_id
         )
         assert "Age groups:" in derived_result
 
         # Step 4: Check notes
         notes = (
-            "\n".join(script_runner.notes) if script_runner.notes else "No notes yet"
+            "\n".join(script_runner.session_notes.get(session_id, []))
+            if script_runner.session_notes.get(session_id)
+            else "No notes yet"
         )
         assert "Successfully loaded CSV" in notes
         assert "Data Analysis" in notes
 
     def test_multiple_dataframes_workflow(self, temp_csv_file):
         """Test workflow with multiple DataFrames."""
+        session_id = "integration_test_session"
         # Load same data with different names
-        script_runner.load_csv(temp_csv_file, "dataset1")
-        script_runner.load_csv(temp_csv_file, "dataset2")
+        script_runner.load_csv(temp_csv_file, "dataset1", session_id)
+        script_runner.load_csv(temp_csv_file, "dataset2", session_id)
 
         # Work with both datasets
         script = """
@@ -59,30 +65,32 @@ print(f"Dataset2 shape: {dataset2.shape}")
 comparison = dataset1.equals(dataset2)
 print(f"Datasets are identical: {comparison}")
 """
-        result = script_runner.safe_eval(script)
+        result = script_runner.safe_eval(script, session_id=session_id)
         assert "Dataset1 shape: (3, 3)" in result
         assert "Dataset2 shape: (3, 3)" in result
         assert "Datasets are identical: True" in result
 
     def test_error_recovery_workflow(self, temp_csv_file):
         """Test error handling and recovery in workflows."""
+        session_id = "integration_test_session"
         # Load data successfully
-        script_runner.load_csv(temp_csv_file, "data")
+        script_runner.load_csv(temp_csv_file, "data", session_id)
 
         # Try script with error
         error_script = "undefined_variable + 1"
         with pytest.raises(Exception):
-            script_runner.safe_eval(error_script)
+            script_runner.safe_eval(error_script, session_id=session_id)
 
         # Continue with valid script
         valid_script = "print(f'Data loaded successfully: {data.shape}')"
-        result = script_runner.safe_eval(valid_script)
+        result = script_runner.safe_eval(valid_script, session_id=session_id)
         assert "Data loaded successfully: (3, 3)" in result
 
     @pytest.mark.slow
     def test_large_script_workflow(self, temp_csv_file):
         """Test workflow with a larger, more complex script."""
-        script_runner.load_csv(temp_csv_file, "df")
+        session_id = "integration_test_session"
+        script_runner.load_csv(temp_csv_file, "df", session_id)
 
         large_script = """
 import pandas as pd
@@ -112,7 +120,9 @@ df['name_upper'] = df['name'].str.upper()
 print("\\nNames in uppercase:")
 print(df['name_upper'].tolist())
 """
-        result = script_runner.safe_eval(large_script, save_to_memory=["df"])
+        result = script_runner.safe_eval(
+            large_script, save_to_memory=["df"], session_id=session_id
+        )
         assert "Basic statistics:" in result
         assert "City statistics:" in result
         assert "Young people count: 1" in result
