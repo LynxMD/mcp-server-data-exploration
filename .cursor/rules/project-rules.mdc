@@ -27,23 +27,23 @@
 
 ### **Running Tests**
 ```bash
-# Run all tests (coverage is configured in pyproject.toml)
-pytest
+# Run all tests with coverage (RECOMMENDED - same as pre-commit and CI)
+uv run pytest tests/ -v --cov=mcp_server_ds --cov-report=term-missing
+
+# Run all tests without coverage (if coverage causes issues)
+uv run pytest tests/ -v
 
 # Run specific test file
-pytest tests/test_session_isolation.py
-
-# Run with verbose output
-pytest -v
-
-# Run without coverage (if coverage causes issues)
-pytest --no-cov
+uv run pytest tests/test_session_isolation.py -v
 
 # Run specific test class
-pytest tests/test_session_isolation.py::TestScriptRunnerSessionIsolation
+uv run pytest tests/test_session_isolation.py::TestScriptRunnerSessionIsolation -v
 
 # Run specific test method
-pytest tests/test_session_isolation.py::TestScriptRunnerSessionIsolation::test_session_data_isolation
+uv run pytest tests/test_session_isolation.py::TestScriptRunnerSessionIsolation::test_session_data_isolation -v
+
+# Run tests with HTML coverage report
+uv run pytest tests/ -v --cov=mcp_server_ds --cov-report=html
 ```
 
 ### **Test Configuration**
@@ -56,6 +56,30 @@ pytest tests/test_session_isolation.py::TestScriptRunnerSessionIsolation::test_s
 - **Terminal**: `--cov-report=term-missing`
 - **HTML**: `--cov-report=html` (generates htmlcov/)
 - **XML**: `--cov-report=xml` (for CI/CD)
+
+## 🚀 **CI/CD & GitHub Actions**
+
+### **GitHub Actions Workflow**
+- **File**: `.github/workflows/ci.yml`
+- **Triggers**: Push to any branch, Pull requests to any branch
+- **Jobs**:
+  - `pre-commit`: Runs all pre-commit hooks
+  - `tests`: Runs tests with coverage using UV
+
+### **CI Commands**
+```bash
+# Pre-commit job runs:
+pre-commit run --all-files
+
+# Tests job runs:
+uv run pytest tests/ -v --cov=mcp_server_ds --cov-report=term-missing --cov-report=xml --cov-fail-under=75
+```
+
+### **CI Requirements**
+- **Python 3.11**: Required version
+- **UV**: Modern package manager (installed via `astral-sh/setup-uv@v3`)
+- **Coverage**: Must be ≥75% to pass CI
+- **All Tests**: Must pass (currently 34 tests)
 
 ## 📦 **Package Management with UV**
 
@@ -223,9 +247,10 @@ mcp-server-data-exploration/
 #### **Pytest Coverage Errors**
 ```bash
 # If coverage options cause issues, run without coverage
-pytest --no-cov
+uv run pytest tests/ -v
 
-# Or modify pyproject.toml to remove coverage options temporarily
+# The pyproject.toml has coverage options that may conflict
+# Use UV to run tests as it handles dependencies properly
 ```
 
 #### **Import Errors**
@@ -287,7 +312,7 @@ pre-commit install
 ```bash
 # Make changes to code
 # Run tests
-pytest
+uv run pytest tests/ -v --cov=mcp_server_ds --cov-report=term-missing
 
 # Check code quality
 ruff check . && ruff format .
@@ -298,14 +323,14 @@ mypy src/
 
 ### **3. Testing**
 ```bash
-# Run all tests
-pytest
+# Run all tests (same as CI and pre-commit)
+uv run pytest tests/ -v --cov=mcp_server_ds --cov-report=term-missing
 
 # Run specific tests
-pytest tests/test_session_isolation.py -v
+uv run pytest tests/test_session_isolation.py -v
 
 # Test session isolation manually
-python -c "from src.mcp_server_ds.server import script_runner; print('Import successful')"
+uv run python -c "from src.mcp_server_ds.server import script_runner; print('Import successful')"
 ```
 
 ### **4. Pre-commit**
@@ -374,11 +399,11 @@ pre-commit run --all-files
 # Setup
 uv sync && pre-commit install
 
-# Development
-pytest && ruff check . && ruff format .
+# Development (same as CI)
+uv run pytest tests/ -v --cov=mcp_server_ds --cov-report=term-missing && ruff check . && ruff format .
 
 # Testing
-pytest tests/test_session_isolation.py -v
+uv run pytest tests/test_session_isolation.py -v
 
 # Server
 uv run python -m src.mcp_server_ds.server
