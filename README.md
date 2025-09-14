@@ -73,7 +73,7 @@ These are examples of how you can use MCP Server to explore data without any hum
 
 ### Resources *(New in FastMCP 2.0)*
 1. **data-exploration://notes** - Analysis notes and operation history
-2. **data-exploration://csv-files** - Auto-discovery of available CSV files  
+2. **data-exploration://csv-files** - Auto-discovery of available CSV files
 3. **data-exploration://dataframes** - Currently loaded DataFrames information
 4. **data-exploration://history** - Recent analysis operations history
 
@@ -90,7 +90,7 @@ This server has been **completely rewritten** using [FastMCP 2.0](https://gofast
 
 ### **Preserved Functionality:**
 - ✅ All existing tools (`load_csv`, `run_script`) work identically
-- ✅ Same prompt templates and data exploration capabilities  
+- ✅ Same prompt templates and data exploration capabilities
 - ✅ Full backward compatibility with existing Claude Desktop configurations
 - ✅ Same data science libraries and ScriptRunner functionality
 

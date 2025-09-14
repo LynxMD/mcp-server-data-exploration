@@ -26,5 +26,10 @@ email = "xingxingumich@gmail.com"
 requires = [ "hatchling",]
 build-backend = "hatchling.build"
 
+[dependency-groups]
+dev = [
+    "pre-commit>=4.3.0",
+]
+
 [project.scripts]
 mcp-server-ds = "mcp_server_ds:main"

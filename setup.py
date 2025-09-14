@@ -65,10 +65,10 @@ def setup_claude_config():
     """Setup Claude desktop config file."""
     config_path = Path("~/Library/Application Support/Claude/claude_desktop_config.json").expanduser()
     config_dir = config_path.parent
-    
+
     if not config_dir.exists():
         config_dir.mkdir(parents=True)
-    
+
     config = {"mcpServers": {}} if not config_path.exists() else json.loads(config_path.read_text())
     return config_path, config
 
@@ -89,7 +89,7 @@ def build_package():
         print(f"Raw output: {output}")  # Debug: check output
     except Exception as e:
         sys.exit(f"Error running build: {str(e)}")
-    
+
     # Check if the command was successful
     if process.returncode != 0:
         sys.exit(f"Build failed with error code {process.returncode}")
@@ -99,7 +99,7 @@ def build_package():
     whl_file = match[-1] if match else None
     if not whl_file:
         sys.exit("Failed to find wheel file in build output")
-    
+
     # Convert to absolute path
     path = Path(whl_file).absolute()
     return str(path)
@@ -111,7 +111,7 @@ def update_config(config_path, config, wheel_path):
         "command": "uvx",
         "args": ["--from", wheel_path, "mcp-server-ds"]
     }
-    
+
     config_path.write_text(json.dumps(config, indent=2))
     print(f"Updated config at {config_path}")
 
