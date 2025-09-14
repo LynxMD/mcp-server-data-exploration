@@ -1,6 +1,7 @@
 import logging
 import glob
 import os
+from typing import Any
 
 # FastMCP 2.0 import
 from fastmcp import FastMCP
@@ -92,38 +93,100 @@ Please begin your analysis by loading the CSV file and providing an initial expl
 """
 
 
-# ScriptRunner class (preserved from original)
+# ScriptRunner class with session isolation
 class ScriptRunner:
     def __init__(self):
-        self.data = {}
-        self.df_count = 0
-        self.notes: list[str] = []
+        # Session-based data storage: {session_id: {df_name: DataFrame}}
+        self.session_data = {}
+        # Session-based notes: {session_id: [notes]}
+        self.session_notes = {}
+        # Session-based DataFrame counters: {session_id: count}
+        self.session_df_count = {}
 
-    def load_csv(self, csv_path: str, df_name: str | None = None) -> str:
-        self.df_count += 1
+    def _validate_session_id(self, session_id: str) -> str:
+        """Validate that session_id is a non-empty string."""
+        if not session_id or not isinstance(session_id, str) or not session_id.strip():
+            raise ValueError("session_id must be a non-empty string")
+        return session_id.strip()
+
+    def _get_session_data(self, session_id: str) -> dict[str, Any]:
+        """Get or create session data storage."""
+        if session_id not in self.session_data:
+            self.session_data[session_id] = {}
+        return self.session_data[session_id]  # type: ignore[no-any-return]
+
+    def _get_session_notes(self, session_id: str) -> list[str]:
+        """Get or create session notes storage."""
+        if session_id not in self.session_notes:
+            self.session_notes[session_id] = []
+        return self.session_notes[session_id]  # type: ignore[no-any-return]
+
+    def _get_session_df_count(self, session_id: str) -> int:
+        """Get or create session DataFrame counter."""
+        if session_id not in self.session_df_count:
+            self.session_df_count[session_id] = 0
+        return self.session_df_count[session_id]  # type: ignore[no-any-return]
+
+    def _increment_session_df_count(self, session_id: str) -> int:
+        """Increment and return session DataFrame counter."""
+        if session_id not in self.session_df_count:
+            self.session_df_count[session_id] = 0
+        self.session_df_count[session_id] += 1
+        return self.session_df_count[session_id]  # type: ignore[no-any-return]
+
+    def load_csv(
+        self, csv_path: str, df_name: str | None = None, session_id: str = None
+    ) -> str:
+        """Load CSV with session isolation."""
+        if not session_id:
+            raise ValueError("session_id is required for session isolation")
+
+        session_id = self._validate_session_id(session_id)
+        session_data = self._get_session_data(session_id)
+        session_notes = self._get_session_notes(session_id)
+
+        df_count = self._increment_session_df_count(session_id)
         if not df_name:
-            df_name = f"df_{self.df_count}"
+            df_name = f"df_{df_count}"
+
         try:
-            self.data[df_name] = pd.read_csv(csv_path)
-            self.notes.append(f"Successfully loaded CSV into dataframe '{df_name}'")
+            session_data[df_name] = pd.read_csv(csv_path)
+            session_notes.append(
+                f"Successfully loaded CSV into dataframe '{df_name}' for session '{session_id}'"
+            )
             return f"Successfully loaded CSV into dataframe '{df_name}'"
         except Exception as e:
             error_msg = f"Error loading CSV: {str(e)}"
-            self.notes.append(error_msg)
+            session_notes.append(error_msg)
             raise Exception(error_msg)
 
-    def safe_eval(self, script: str, save_to_memory: list[str] | None = None) -> str:
-        """safely run a script, return the result if valid, otherwise return the error message"""
-        # first extract dataframes from the self.data
+    def safe_eval(
+        self,
+        script: str,
+        save_to_memory: list[str] | None = None,
+        session_id: str = None,
+    ) -> str:
+        """Safely run a script with session isolation."""
+        if not session_id:
+            raise ValueError("session_id is required for session isolation")
+
+        session_id = self._validate_session_id(session_id)
+        session_data = self._get_session_data(session_id)
+        session_notes = self._get_session_notes(session_id)
+
+        # Extract dataframes from session-specific data
         local_dict = {
-            **{df_name: df for df_name, df in self.data.items()},
+            **{df_name: df for df_name, df in session_data.items()},
         }
-        # execute the script and return the result and if there is error, return the error message
+
+        # Execute the script and return the result
         try:
             stdout_capture = StringIO()
             old_stdout = sys.stdout
             sys.stdout = stdout_capture
-            self.notes.append(f"Running script: \n{script}")
+            session_notes.append(
+                f"Running script for session '{session_id}': \n{script}"
+            )
             # pylint: disable=exec-used
             exec(
                 script,
@@ -144,18 +207,20 @@ class ScriptRunner:
             std_out_script = stdout_capture.getvalue()
         except Exception as e:
             sys.stdout = old_stdout
-            error_msg = f"Error running script: {str(e)}"
-            self.notes.append(error_msg)
+            error_msg = f"Error running script for session '{session_id}': {str(e)}"
+            session_notes.append(error_msg)
             raise Exception(str(e))
 
-        # check if the result is a dataframe
+        # Save dataframes to session-specific memory
         if save_to_memory:
             for df_name in save_to_memory:
-                self.notes.append(f"Saving dataframe '{df_name}' to memory")
-                self.data[df_name] = local_dict.get(df_name)
+                session_notes.append(
+                    f"Saving dataframe '{df_name}' to memory for session '{session_id}'"
+                )
+                session_data[df_name] = local_dict.get(df_name)
 
         output = std_out_script if std_out_script else "No output"
-        self.notes.append(f"Result: {output}")
+        session_notes.append(f"Result for session '{session_id}': {output}")
         return output
 
 
@@ -172,38 +237,65 @@ def explore_data(csv_path: str, topic: str = "general data exploration") -> str:
 
 # === TOOLS ===
 @mcp.tool
-def load_csv(csv_path: str, df_name: str | None = None) -> str:
-    """Load a local CSV file into a DataFrame.
+def load_csv(csv_path: str, df_name: str | None = None, session_id: str = None) -> str:
+    """Load a local CSV file into a DataFrame with session isolation.
 
     Args:
         csv_path: Path to the CSV file
         df_name: Optional name for the DataFrame. If not provided, will auto-assign df_1, df_2, etc.
+        session_id: Session ID for data isolation (required)
 
     Returns:
         Success message with DataFrame name
     """
-    return script_runner.load_csv(csv_path, df_name)
+    if not session_id:
+        raise ValueError("session_id is required for session isolation")
+
+    session_id = session_id.strip()
+    if not session_id:
+        raise ValueError("session_id must be a non-empty string")
+
+    return script_runner.load_csv(csv_path, df_name, session_id)
 
 
 @mcp.tool
-def run_script(script: str, save_to_memory: list[str] | None = None) -> str:
-    """Execute Python scripts for data analytics tasks.
+def run_script(
+    script: str, save_to_memory: list[str] | None = None, session_id: str = None
+) -> str:
+    """Execute Python scripts for data analytics tasks with session isolation.
 
     Args:
         script: The Python script to execute
         save_to_memory: Optional list of DataFrame names to save to memory
+        session_id: Session ID for data isolation (required)
 
     Returns:
         Script execution result
     """
-    return script_runner.safe_eval(script, save_to_memory)
+    if not session_id:
+        raise ValueError("session_id is required for session isolation")
+
+    session_id = session_id.strip()
+    if not session_id:
+        raise ValueError("session_id must be a non-empty string")
+
+    return script_runner.safe_eval(script, save_to_memory, session_id)
 
 
 # === RESOURCES ===
-@mcp.resource("data-exploration://notes")
-def get_exploration_notes() -> str:
-    """Notes generated by the data exploration server."""
-    return "\n".join(script_runner.notes) if script_runner.notes else "No notes yet"
+@mcp.resource("data-exploration://notes/{session_id}")
+def get_exploration_notes(session_id: str) -> str:
+    """Notes generated by the data exploration server for a specific session."""
+    session_id = session_id.strip()
+    if not session_id:
+        return "Invalid session_id - cannot retrieve session-specific notes"
+
+    session_notes = script_runner._get_session_notes(session_id)
+    return (
+        "\n".join(session_notes)
+        if session_notes
+        else f"No notes yet for session '{session_id}'"
+    )
 
 
 @mcp.resource("data-exploration://csv-files")
@@ -223,29 +315,9 @@ def list_csv_files() -> str:
     return "CSV file listing:\n" + "\n".join(csv_files)
 
 
-@mcp.resource("data-exploration://dataframes")
-def list_dataframes() -> str:
-    """List currently loaded DataFrames with their information."""
-    if not script_runner.data:
-        return "No DataFrames loaded"
-
-    info = ["Currently loaded DataFrames:"]
-    for name, df in script_runner.data.items():
-        info.append(f"- {name}: {df.shape[0]} rows, {df.shape[1]} columns")
-        info.append(
-            f"  Columns: {', '.join(df.columns[:5])}{'...' if len(df.columns) > 5 else ''}"
-        )
-
-    return "\n".join(info)
-
-
-@mcp.resource("data-exploration://history")
-def get_analysis_history() -> str:
-    """Get history of recent analysis operations."""
-    if not script_runner.notes:
-        return "No analysis history yet"
-
-    return "Recent analysis history:\n" + "\n".join(script_runner.notes[-10:])
+# Note: list_dataframes and get_analysis_history resources removed
+# These functions are no longer compatible with session-based storage
+# Use session-specific resources instead (e.g., data-exploration://notes/{session_id})
 
 
 # === MAIN ENTRY POINT ===
