@@ -3,7 +3,7 @@ name = "mcp-server-ds"
 version = "0.2.0"
 description = "A MCP server project"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.10,<4.0"
 dependencies = [
  "rich<14.0.0,>=13.6.0",
  "fastmcp>=2.0.0",
