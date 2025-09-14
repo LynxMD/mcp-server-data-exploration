@@ -1,0 +1,401 @@
+# MCP Server Data Exploration - Project Rules
+
+## 🏗️ **Project Architecture & Stack**
+
+### **Core Technology Stack**
+- **FastMCP 2.0**: Modern MCP server framework for data science tools
+- **Python 3.11+**: Required Python version with modern features
+- **Pandas**: Primary data manipulation library
+- **NumPy**: Numerical computing foundation
+- **Scikit-learn**: Machine learning algorithms
+- **SciPy**: Scientific computing
+- **Statsmodels**: Statistical modeling
+- **PyArrow**: High-performance data processing
+- **PIL/Pillow**: Image processing
+- **PyTesseract**: OCR capabilities
+- **PyMuPDF**: PDF processing
+
+### **Development Tools**
+- **UV**: Modern Python package manager (preferred over pip)
+- **Pytest**: Testing framework with coverage reporting
+- **Ruff**: Fast Python linter and formatter (replaces Black + flake8)
+- **MyPy**: Static type checking
+- **Pre-commit**: Git hooks for code quality
+- **Hatchling**: Build system for packaging
+
+## 🧪 **Testing & Quality Assurance**
+
+### **Running Tests**
+```bash
+# Run all tests (coverage is configured in pyproject.toml)
+pytest
+
+# Run specific test file
+pytest tests/test_session_isolation.py
+
+# Run with verbose output
+pytest -v
+
+# Run without coverage (if coverage causes issues)
+pytest --no-cov
+
+# Run specific test class
+pytest tests/test_session_isolation.py::TestScriptRunnerSessionIsolation
+
+# Run specific test method
+pytest tests/test_session_isolation.py::TestScriptRunnerSessionIsolation::test_session_data_isolation
+```
+
+### **Test Configuration**
+- **Coverage Target**: 75% minimum (configured in pyproject.toml)
+- **Test Discovery**: `test_*.py` and `*_test.py` files
+- **Test Markers**: `slow`, `integration`, `unit`
+- **Async Support**: Auto-detection enabled
+
+### **Coverage Reports**
+- **Terminal**: `--cov-report=term-missing`
+- **HTML**: `--cov-report=html` (generates htmlcov/)
+- **XML**: `--cov-report=xml` (for CI/CD)
+
+## 📦 **Package Management with UV**
+
+### **UV Commands**
+```bash
+# Install dependencies
+uv sync
+
+# Add new dependency
+uv add pandas
+
+# Add development dependency
+uv add --dev pytest
+
+# Remove dependency
+uv remove package-name
+
+# Update dependencies
+uv lock --upgrade
+
+# Run commands in virtual environment
+uv run pytest
+uv run python -m src.mcp_server_ds.server
+```
+
+### **Virtual Environment**
+- **Location**: `.venv/` (managed by UV)
+- **Activation**: `source .venv/bin/activate` (Unix) or `.venv\Scripts\activate` (Windows)
+- **Auto-activation**: UV automatically manages the environment
+
+## 🔧 **Code Quality & Linting**
+
+### **Ruff Configuration**
+- **Line Length**: 88 characters (Black-compatible)
+- **Indent**: 4 spaces
+- **Quote Style**: Double quotes
+- **Target**: Python 3.11
+- **Rules**: E4, E7, E9, F (Pyflakes + pycodestyle subset)
+
+### **Ruff Commands**
+```bash
+# Check code
+ruff check .
+
+# Fix auto-fixable issues
+ruff check --fix .
+
+# Format code
+ruff format .
+
+# Check and format
+ruff check --fix . && ruff format .
+```
+
+### **MyPy Configuration**
+- **Python Version**: 3.11
+- **Strict Settings**: Enabled for return types, unused configs, etc.
+- **Ignore Missing Imports**: Enabled (for external libraries)
+
+### **MyPy Commands**
+```bash
+# Type check
+mypy src/
+
+# Type check with strict mode
+mypy --strict src/
+```
+
+## 🚀 **Pre-commit Hooks**
+
+### **Setup**
+```bash
+# Install pre-commit
+uv add --dev pre-commit
+
+# Install hooks
+pre-commit install
+
+# Run on all files
+pre-commit run --all-files
+
+# Update hooks
+pre-commit autoupdate
+```
+
+### **Configured Hooks**
+- **Ruff**: Linting and formatting
+- **MyPy**: Type checking
+- **Pytest**: Test execution
+- **Custom hooks**: As defined in `.pre-commit-config.yaml`
+
+## 🛡️ **Session Isolation & Security**
+
+### **Critical Security Features**
+- **Session ID Override**: Backend always overrides AI-provided session_id
+- **Session Validation**: All session_ids must be non-empty strings
+- **Data Isolation**: Each session has separate data storage
+- **Security Logging**: All AI session_id attempts are logged
+
+### **Session Architecture**
+```python
+# Session-based data storage
+session_data = {
+    "user_123_session_456": {"df1": DataFrame, "df2": DataFrame},
+    "user_789_session_012": {"df1": DataFrame, "df2": DataFrame}
+}
+
+# Session-based notes
+session_notes = {
+    "user_123_session_456": ["note1", "note2"],
+    "user_789_session_012": ["note1", "note2"]
+}
+```
+
+### **MCP Tools with Session Support**
+- **`load_csv(csv_path, df_name, session_id)`**: Load CSV with session isolation
+- **`run_script(script, save_to_memory, session_id)`**: Execute script with session isolation
+- **`get_exploration_notes(session_id)`**: Get session-specific notes
+
+## 🏃‍♂️ **Running the MCP Server**
+
+### **Development Mode**
+```bash
+# Run server directly
+uv run python -m src.mcp_server_ds.server
+
+# Run with specific transport
+uv run python -m src.mcp_server_ds.server --transport stdio
+
+# Run with logging
+uv run python -m src.mcp_server_ds.server --log-level debug
+```
+
+### **Production Mode**
+```bash
+# Install as package
+uv pip install -e .
+
+# Run as script
+mcp-server-ds
+```
+
+## 📁 **Project Structure**
+
+```
+mcp-server-data-exploration/
+├── src/
+│   └── mcp_server_ds/
+│       ├── __init__.py
+│       └── server.py              # Main MCP server implementation
+├── tests/
+│   └── test_session_isolation.py  # Session isolation tests
+├── .cursor/
+│   └── rules/
+│       └── project-rules.mdc      # This file
+├── pyproject.toml                 # Project configuration
+├── uv.lock                        # UV lock file
+└── README.md                      # Project documentation
+```
+
+## 🔍 **Debugging & Troubleshooting**
+
+### **Common Issues**
+
+#### **Pytest Coverage Errors**
+```bash
+# If coverage options cause issues, run without coverage
+pytest --no-cov
+
+# Or modify pyproject.toml to remove coverage options temporarily
+```
+
+#### **Import Errors**
+```bash
+# Ensure you're in the right directory
+cd /Users/itaics/Code/mcp-server-data-exploration
+
+# Check Python path
+python -c "import sys; print(sys.path)"
+
+# Install in development mode
+uv pip install -e .
+```
+
+#### **Session Isolation Issues**
+```bash
+# Test session isolation manually
+python -c "
+from src.mcp_server_ds.server import script_runner
+import pandas as pd
+import tempfile
+import os
+
+# Create test data
+test_data = pd.DataFrame({'col1': [1, 2, 3]})
+with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False) as f:
+    test_data.to_csv(f.name, index=False)
+    csv_path = f.name
+
+try:
+    result = script_runner.load_csv(csv_path, 'df1', 'test_session')
+    print('✅ Session isolation working:', result)
+finally:
+    os.unlink(csv_path)
+"
+```
+
+### **Logging**
+- **Server Logs**: Check console output for MCP server logs
+- **Session Logs**: Session isolation events are logged
+- **Security Logs**: AI session_id attempts are logged as warnings
+
+## 🚀 **Development Workflow**
+
+### **1. Setup Environment**
+```bash
+# Clone repository
+git clone <repo-url>
+cd mcp-server-data-exploration
+
+# Install dependencies
+uv sync
+
+# Install pre-commit hooks
+pre-commit install
+```
+
+### **2. Development**
+```bash
+# Make changes to code
+# Run tests
+pytest
+
+# Check code quality
+ruff check . && ruff format .
+
+# Type check
+mypy src/
+```
+
+### **3. Testing**
+```bash
+# Run all tests
+pytest
+
+# Run specific tests
+pytest tests/test_session_isolation.py -v
+
+# Test session isolation manually
+python -c "from src.mcp_server_ds.server import script_runner; print('Import successful')"
+```
+
+### **4. Pre-commit**
+```bash
+# Pre-commit runs automatically on git commit
+# Or run manually
+pre-commit run --all-files
+```
+
+## 📚 **Key Dependencies**
+
+### **Core Dependencies**
+- `fastmcp>=2.12.3`: MCP server framework
+- `pandas>=2.3.2`: Data manipulation
+- `numpy>=2.3.3`: Numerical computing
+- `scikit-learn>=1.7.2`: Machine learning
+- `scipy>=1.14.1,<1.16.0`: Scientific computing
+- `statsmodels>=0.14.5`: Statistical modeling
+
+### **Development Dependencies**
+- `pytest>=8.4.2`: Testing framework
+- `pytest-cov>=7.0.0`: Coverage reporting
+- `ruff>=0.13.0`: Linting and formatting
+- `mypy>=1.18.1`: Type checking
+- `pre-commit>=4.3.0`: Git hooks
+
+## 🎯 **Best Practices**
+
+### **Code Quality**
+- **Always run tests** before committing
+- **Use type hints** for better code documentation
+- **Follow Ruff formatting** (88 char lines, double quotes)
+- **Write comprehensive tests** for new features
+
+### **Session Security**
+- **Never trust AI-provided session_id** - always override
+- **Validate all session_ids** as non-empty strings
+- **Log security events** for monitoring
+- **Test session isolation** thoroughly
+
+### **MCP Development**
+- **Use FastMCP 2.0** patterns and decorators
+- **Implement proper error handling** in tools
+- **Document tool parameters** clearly
+- **Test with real data** scenarios
+
+## 🔧 **Configuration Files**
+
+### **pyproject.toml**
+- **Project metadata**: Name, version, dependencies
+- **Tool configurations**: Ruff, MyPy, Pytest
+- **Build system**: Hatchling
+- **Scripts**: MCP server entry point
+
+### **uv.lock**
+- **Dependency lock file**: Exact versions for reproducibility
+- **Generated by UV**: Don't edit manually
+- **Commit to version control**: Ensures consistent environments
+
+---
+
+## 🎉 **Quick Reference**
+
+### **Essential Commands**
+```bash
+# Setup
+uv sync && pre-commit install
+
+# Development
+pytest && ruff check . && ruff format .
+
+# Testing
+pytest tests/test_session_isolation.py -v
+
+# Server
+uv run python -m src.mcp_server_ds.server
+```
+
+### **Key Files**
+- `src/mcp_server_ds/server.py`: Main MCP server
+- `tests/test_session_isolation.py`: Session isolation tests
+- `pyproject.toml`: Project configuration
+- `.cursor/rules/project-rules.mdc`: This file
+
+### **Session Isolation**
+- **Backend**: Always overrides AI session_id
+- **MCP Server**: Validates session_id, isolates data
+- **Testing**: Comprehensive session isolation tests
+- **Security**: Logs all AI session_id attempts
+
+---
+
+*This file documents the complete development stack, tools, and processes for the MCP Server Data Exploration project. Keep it updated as the project evolves.*
