@@ -100,7 +100,7 @@ class ScriptRunner:
         self.df_count = 0
         self.notes: list[str] = []
 
-    def load_csv(self, csv_path: str, df_name: str = None):
+    def load_csv(self, csv_path: str, df_name: Optional[str] = None) -> str:
         self.df_count += 1
         if not df_name:
             df_name = f"df_{self.df_count}"
@@ -113,7 +113,7 @@ class ScriptRunner:
             self.notes.append(error_msg)
             raise Exception(error_msg)
 
-    def safe_eval(self, script: str, save_to_memory: Optional[List[str]] = None):
+    def safe_eval(self, script: str, save_to_memory: Optional[List[str]] = None) -> str:
         """safely run a script, return the result if valid, otherwise return the error message"""
         # first extract dataframes from the self.data
         local_dict = {
@@ -173,7 +173,7 @@ def explore_data(csv_path: str, topic: str = "general data exploration") -> str:
 
 # === TOOLS ===
 @mcp.tool
-def load_csv(csv_path: str, df_name: str = None) -> str:
+def load_csv(csv_path: str, df_name: Optional[str] = None) -> str:
     """Load a local CSV file into a DataFrame.
 
     Args:
@@ -187,7 +187,7 @@ def load_csv(csv_path: str, df_name: str = None) -> str:
 
 
 @mcp.tool
-def run_script(script: str, save_to_memory: List[str] = None) -> str:
+def run_script(script: str, save_to_memory: Optional[List[str]] = None) -> str:
     """Execute Python scripts for data analytics tasks.
 
     Args:
