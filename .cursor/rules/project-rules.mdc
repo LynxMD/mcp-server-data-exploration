@@ -238,6 +238,29 @@ Pre-commit quick pass before committing:
 uv run pytest -q && ruff check . && ruff format . && mypy src/
 ```
 
+#### One-shot commit guide (copy/paste)
+- Use a short title (≤72). Keep each body line ≤80 and include at least one body line.
+- Recommended command pattern (multiple -m flags create wrapped body lines):
+```
+git commit \
+  -m "type(scope): short title here" \
+  -m "Short body line one describing what changed." \
+  -m "Short body line two describing why it changed."
+```
+
+Examples that pass in one round:
+```
+git commit \
+  -m "docs(rules): add one-shot commit guide and examples" \
+  -m "Adds exact commit command format that passes hooks in one go." \
+  -m "Includes short-body pattern, length limits, and quick checklist."
+```
+
+Common pitfalls and fixes:
+- Title too long (>72): shorten title; move details to body lines.
+- Missing body: add at least one `-m` after the title for a body line.
+- Body line too long (>80): split into two `-m` lines.
+
 ## 🏃‍♂️ **Running the MCP Server**
 
 ### **Development Mode**
