@@ -18,11 +18,11 @@ import pyarrow
 from PIL import Image
 import pytesseract
 import pymupdf
-import psutil
 
 # Data management
 from .data_manager import DataManager
 from .ttl_in_memory_data_manager import TTLInMemoryDataManager
+from .system_utils import log_system_status
 
 logger = logging.getLogger(__name__)
 # Ensure logs are visible in the FastMCP subprocess even if no handlers configured
@@ -119,22 +119,9 @@ class ScriptRunner:
         self.session_df_count: dict[str, int] = {}
 
     def log_system_status(self) -> None:
-        """Log and print DataManager and system resource stats."""
-        try:
-            vm = psutil.virtual_memory()
-            du = psutil.disk_usage("/")
-            dm_name = self.data_manager.__class__.__name__
-            msg = (
-                f"DataManager={dm_name} | RAM used={vm.percent:.1f}% "
-                f"({vm.used // (1024**2)}MB/{vm.total // (1024**2)}MB) | "
-                f"Disk used={du.percent:.1f}% "
-                f"({du.used // (1024**3)}GB/{du.total // (1024**3)}GB)"
-            )
-            logger.info(msg)
-            # Send to stderr so it shows in FastMCP stdio transport logs
-            print(f"[MCP-Server] {msg}", file=sys.stderr, flush=True)
-        except Exception as e:  # pragma: no cover
-            logger.debug(f"Failed to log system status: {e}")
+        """Delegate to system utils for logging and alerting."""
+        dm_name = self.data_manager.__class__.__name__
+        log_system_status(dm_name)
 
     def _validate_session_id(self, session_id: str) -> str:
         """Validate that session_id is a non-empty string."""
