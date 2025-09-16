@@ -11,7 +11,7 @@ class TestScriptRunner:
     def test_initialization(self):
         """Test that ScriptRunner initializes correctly."""
         runner = ScriptRunner()
-        assert runner.session_data == {}
+        assert runner.data_manager is not None
         assert runner.session_notes == {}
         assert runner.session_df_count == {}
 
@@ -21,13 +21,11 @@ class TestScriptRunner:
         result = script_runner.load_csv(temp_csv_file, "test_df", session_id)
 
         assert "Successfully loaded CSV into dataframe 'test_df'" in result
-        assert "test_df" in script_runner.session_data[session_id]
-        assert isinstance(
-            script_runner.session_data[session_id]["test_df"], pd.DataFrame
-        )
-        assert (
-            len(script_runner.session_data[session_id]["test_df"]) == 3
-        )  # 3 rows in our test data
+        assert script_runner.data_manager.has_session(session_id)
+        test_df = script_runner.data_manager.get_dataframe(session_id, "test_df")
+        assert test_df is not None
+        assert isinstance(test_df, pd.DataFrame)
+        assert len(test_df) == 3  # 3 rows in our test data
 
     def test_load_csv_auto_name(self, script_runner, temp_csv_file):
         """Test CSV loading with auto-generated name."""
@@ -35,7 +33,7 @@ class TestScriptRunner:
         result = script_runner.load_csv(temp_csv_file, session_id=session_id)
 
         assert "Successfully loaded CSV into dataframe 'df_1'" in result
-        assert "df_1" in script_runner.session_data[session_id]
+        assert script_runner.data_manager.get_dataframe(session_id, "df_1") is not None
 
     def test_load_csv_nonexistent_file(self, script_runner):
         """Test CSV loading with non-existent file."""
@@ -87,10 +85,9 @@ new_df['age_group'] = 'adult'
             script, save_to_memory=["new_df"], session_id=session_id
         )
 
-        assert "new_df" in script_runner.session_data[session_id]
-        assert (
-            len(script_runner.session_data[session_id]["new_df"]) == 2
-        )  # 2 rows with age > 25
+        new_df = script_runner.data_manager.get_dataframe(session_id, "new_df")
+        assert new_df is not None
+        assert len(new_df) == 2  # 2 rows with age > 25
 
     def test_safe_eval_error_handling(self, script_runner):
         """Test safe_eval error handling."""

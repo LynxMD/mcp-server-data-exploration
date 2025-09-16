@@ -19,6 +19,10 @@ from PIL import Image
 import pytesseract
 import pymupdf
 
+# Data management
+from .data_manager import DataManager
+from .in_memory_data_manager import InMemoryDataManager
+
 logger = logging.getLogger(__name__)
 logger.info("Starting FastMCP 2.0 data science exploration server")
 
@@ -95,13 +99,13 @@ Please begin your analysis by loading the CSV file and providing an initial expl
 
 # ScriptRunner class with session isolation
 class ScriptRunner:
-    def __init__(self):
-        # Session-based data storage: {session_id: {df_name: DataFrame}}
-        self.session_data = {}
+    def __init__(self, data_manager: DataManager | None = None):
+        # Initialize data manager (default to in-memory implementation)
+        self.data_manager = data_manager or InMemoryDataManager()
         # Session-based notes: {session_id: [notes]}
-        self.session_notes = {}
+        self.session_notes: dict[str, list[str]] = {}
         # Session-based DataFrame counters: {session_id: count}
-        self.session_df_count = {}
+        self.session_df_count: dict[str, int] = {}
 
     def _validate_session_id(self, session_id: str) -> str:
         """Validate that session_id is a non-empty string."""
@@ -111,28 +115,26 @@ class ScriptRunner:
 
     def _get_session_data(self, session_id: str) -> dict[str, Any]:
         """Get or create session data storage."""
-        if session_id not in self.session_data:
-            self.session_data[session_id] = {}
-        return self.session_data[session_id]  # type: ignore[no-any-return]
+        return self.data_manager.get_session_data(session_id)
 
     def _get_session_notes(self, session_id: str) -> list[str]:
         """Get or create session notes storage."""
         if session_id not in self.session_notes:
             self.session_notes[session_id] = []
-        return self.session_notes[session_id]  # type: ignore[no-any-return]
+        return self.session_notes[session_id]
 
     def _get_session_df_count(self, session_id: str) -> int:
         """Get or create session DataFrame counter."""
         if session_id not in self.session_df_count:
             self.session_df_count[session_id] = 0
-        return self.session_df_count[session_id]  # type: ignore[no-any-return]
+        return self.session_df_count[session_id]
 
     def _increment_session_df_count(self, session_id: str) -> int:
         """Increment and return session DataFrame counter."""
         if session_id not in self.session_df_count:
             self.session_df_count[session_id] = 0
         self.session_df_count[session_id] += 1
-        return self.session_df_count[session_id]  # type: ignore[no-any-return]
+        return self.session_df_count[session_id]
 
     def load_csv(
         self, csv_path: str, df_name: str | None = None, session_id: str = None
@@ -142,7 +144,6 @@ class ScriptRunner:
             raise ValueError("session_id is required for session isolation")
 
         session_id = self._validate_session_id(session_id)
-        session_data = self._get_session_data(session_id)
         session_notes = self._get_session_notes(session_id)
 
         df_count = self._increment_session_df_count(session_id)
@@ -150,7 +151,8 @@ class ScriptRunner:
             df_name = f"df_{df_count}"
 
         try:
-            session_data[df_name] = pd.read_csv(csv_path)
+            df_data = pd.read_csv(csv_path)
+            self.data_manager.set_dataframe(session_id, df_name, df_data)
             session_notes.append(
                 f"Successfully loaded CSV into dataframe '{df_name}' for session '{session_id}'"
             )
@@ -217,7 +219,9 @@ class ScriptRunner:
                 session_notes.append(
                     f"Saving dataframe '{df_name}' to memory for session '{session_id}'"
                 )
-                session_data[df_name] = local_dict.get(df_name)
+                self.data_manager.set_dataframe(
+                    session_id, df_name, local_dict.get(df_name)
+                )
 
         output = std_out_script if std_out_script else "No output"
         session_notes.append(f"Result for session '{session_id}': {output}")

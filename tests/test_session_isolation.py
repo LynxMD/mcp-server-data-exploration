@@ -497,16 +497,16 @@ class TestSessionIsolationEdgeCases:
             self.script_runner.load_csv(csv_path, "df1", session_id)
 
             # Verify data exists
-            assert session_id in self.script_runner.session_data
+            assert self.script_runner.data_manager.has_session(session_id)
             assert session_id in self.script_runner.session_notes
 
             # Simulate cleanup by removing session data
-            del self.script_runner.session_data[session_id]
+            self.script_runner.data_manager.remove_session(session_id)
             del self.script_runner.session_notes[session_id]
             del self.script_runner.session_df_count[session_id]
 
             # Verify session is cleaned up
-            assert session_id not in self.script_runner.session_data
+            assert not self.script_runner.data_manager.has_session(session_id)
             assert session_id not in self.script_runner.session_notes
             assert session_id not in self.script_runner.session_df_count
 
