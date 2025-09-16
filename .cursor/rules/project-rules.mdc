@@ -212,6 +212,32 @@ session_notes = {
   - Type errors: open the file at the reported line, add precise type hints or adjust code to satisfy MyPy.
   - Coverage shortfall: add targeted tests around the changed code until ≥ 75%.
 
+#### Commit message rules (gitlint) and how to avoid failures
+- Title max length: 72 characters (gitlint T1). Keep titles concise.
+- Body required for meaningful changes (gitlint B6). Add at least one body line.
+- Body line length: ≤ 80 characters (gitlint B1). Wrap long lines.
+- Recommended format:
+  - Title: `type(scope): concise summary`
+  - Body: short wrapped sentences with why/what; blank line between paragraphs.
+
+Examples that pass hooks:
+```
+feat: add DataManager abstraction and in-memory implementation
+
+Refactor ScriptRunner to use the DataManager interface for session data.
+Add unit/integration tests and update existing tests to the new API.
+```
+
+Anti-patterns that will fail hooks and how to fix:
+- Too long title (>72): shorten and move details to body.
+- Missing body: add at least one explanatory line in the body.
+- Overlong body line (>80): wrap the sentence across lines.
+
+Pre-commit quick pass before committing:
+```
+uv run pytest -q && ruff check . && ruff format . && mypy src/
+```
+
 ## 🏃‍♂️ **Running the MCP Server**
 
 ### **Development Mode**
