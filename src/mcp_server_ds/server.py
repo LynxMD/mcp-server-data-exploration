@@ -21,7 +21,7 @@ import pymupdf
 
 # Data management
 from .data_manager import DataManager
-from .in_memory_data_manager import InMemoryDataManager
+from .ttl_in_memory_data_manager import TTLInMemoryDataManager
 
 logger = logging.getLogger(__name__)
 logger.info("Starting FastMCP 2.0 data science exploration server")
@@ -100,8 +100,10 @@ Please begin your analysis by loading the CSV file and providing an initial expl
 # ScriptRunner class with session isolation
 class ScriptRunner:
     def __init__(self, data_manager: DataManager | None = None):
-        # Initialize data manager (default to in-memory implementation)
-        self.data_manager = data_manager or InMemoryDataManager()
+        # Initialize data manager
+        # Default: Cacheout-backed TTL in-memory store to prevent memory collapse
+        # while remaining infra-free for demos
+        self.data_manager = data_manager or TTLInMemoryDataManager()
         # Session-based notes: {session_id: [notes]}
         self.session_notes: dict[str, list[str]] = {}
         # Session-based DataFrame counters: {session_id: count}

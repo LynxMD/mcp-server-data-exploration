@@ -6,6 +6,7 @@ import pytest
 import pandas as pd
 from mcp_server_ds.server import ScriptRunner
 from mcp_server_ds.in_memory_data_manager import InMemoryDataManager
+from mcp_server_ds.ttl_in_memory_data_manager import TTLInMemoryDataManager
 
 
 class TestScriptRunnerDataManagerIntegration:
@@ -23,9 +24,11 @@ class TestScriptRunnerDataManagerIntegration:
         assert isinstance(self.script_runner.data_manager, InMemoryDataManager)
 
     def test_script_runner_initialization_with_default_data_manager(self):
-        """Test ScriptRunner initializes with default InMemoryDataManager."""
+        """Test ScriptRunner initializes with a default DataManager implementation."""
         default_runner = ScriptRunner()
-        assert isinstance(default_runner.data_manager, InMemoryDataManager)
+        assert isinstance(
+            default_runner.data_manager, (InMemoryDataManager, TTLInMemoryDataManager)
+        )
 
     def test_load_csv_uses_data_manager(self):
         """Test that load_csv uses the DataManager for storage."""
