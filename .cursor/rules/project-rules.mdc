@@ -199,6 +199,19 @@ session_notes = {
 - **`run_script(script, save_to_memory, session_id)`**: Execute script with session isolation
 - **`get_exploration_notes(session_id)`**: Get session-specific notes
 
+### **Commit & Hooks Discipline (MANDATORY)**
+- ALWAYS pass pre-commit hooks locally before committing.
+- NEVER bypass hooks with `--no-verify`. If a hook blocks you and you cannot resolve it quickly, STOP and ask a teammate/maintainer for help.
+- Keep commit titles ≤ 72 characters; put details in the body.
+- Quick local checks before commit (same as CI):
+  - Run tests with coverage: `uv run pytest tests/ -v --cov=mcp_server_ds --cov-report=term-missing`
+  - Lint/format: `ruff check . && ruff format .`
+  - Type check: `mypy src/`
+- Troubleshooting common failures:
+  - Formatting/lint: run `ruff check --fix . && ruff format .`
+  - Type errors: open the file at the reported line, add precise type hints or adjust code to satisfy MyPy.
+  - Coverage shortfall: add targeted tests around the changed code until ≥ 75%.
+
 ## 🏃‍♂️ **Running the MCP Server**
 
 ### **Development Mode**
