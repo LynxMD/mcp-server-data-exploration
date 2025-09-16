@@ -18,6 +18,7 @@ dependencies = [
  "PyMuPDF>=1.26.4",
  "pillow>=11.3.0",
  "cacheout>=0.16.0",
+ "psutil>=7.0.0",
 ]
 [[project.authors]]
 name = "Xing Xing"

@@ -18,6 +18,7 @@ import pyarrow
 from PIL import Image
 import pytesseract
 import pymupdf
+import psutil
 
 # Data management
 from .data_manager import DataManager
@@ -112,14 +113,28 @@ class ScriptRunner:
         # Default: Cacheout-backed TTL in-memory store to prevent memory collapse
         # while remaining infra-free for demos
         self.data_manager = data_manager or TTLInMemoryDataManager()
-        logger.info(
-            "ScriptRunner initialized with DataManager: %s",
-            self.data_manager.__class__.__name__,
-        )
         # Session-based notes: {session_id: [notes]}
         self.session_notes: dict[str, list[str]] = {}
         # Session-based DataFrame counters: {session_id: count}
         self.session_df_count: dict[str, int] = {}
+
+    def log_system_status(self) -> None:
+        """Log and print DataManager and system resource stats."""
+        try:
+            vm = psutil.virtual_memory()
+            du = psutil.disk_usage("/")
+            dm_name = self.data_manager.__class__.__name__
+            msg = (
+                f"DataManager={dm_name} | RAM used={vm.percent:.1f}% "
+                f"({vm.used // (1024**2)}MB/{vm.total // (1024**2)}MB) | "
+                f"Disk used={du.percent:.1f}% "
+                f"({du.used // (1024**3)}GB/{du.total // (1024**3)}GB)"
+            )
+            logger.info(msg)
+            # Send to stderr so it shows in FastMCP stdio transport logs
+            print(f"[MCP-Server] {msg}", file=sys.stderr, flush=True)
+        except Exception as e:  # pragma: no cover
+            logger.debug(f"Failed to log system status: {e}")
 
     def _validate_session_id(self, session_id: str) -> str:
         """Validate that session_id is a non-empty string."""
@@ -273,6 +288,8 @@ def load_csv(csv_path: str, df_name: str | None = None, session_id: str = None) 
     if not session_id:
         raise ValueError("session_id must be a non-empty string")
 
+    # Log environment at tool entry
+    script_runner.log_system_status()
     return script_runner.load_csv(csv_path, df_name, session_id)
 
 
@@ -297,6 +314,8 @@ def run_script(
     if not session_id:
         raise ValueError("session_id must be a non-empty string")
 
+    # Log environment at tool entry
+    script_runner.log_system_status()
     return script_runner.safe_eval(script, save_to_memory, session_id)
 
 

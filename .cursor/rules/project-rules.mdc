@@ -105,24 +105,36 @@ uv run pytest
 uv run python -m src.mcp_server_ds.server
 ```
 
-### **When adding/updating dependencies (IMPORTANT)**
-- After changing dependencies in this MCP project, you MUST re-install it into any consumer projects (e.g., backend) that import it.
-- Steps:
-  1) In this repo (MCP):
-     - `uv sync`
-  2) In the consumer repo (e.g., research-pulse backend), activate its venv and reinstall the local MCP package in editable mode. Example:
-     - `cd /Users/itaics/Code/research-pulse/backend`
-     - `source .venv/bin/activate` (or your venv)
-     - `uv pip install -e /Users/itaics/Code/mcp-server-data-exploration`
-  3) Restart any running backend/server processes so the new deps are loaded.
-
-Notes:
-- If you see `ImportError: No module named 'cacheout'` (or similar), it means the consumer venv hasn't been updated with the new MCP dependency; re-run step 2.
-
 ### **Virtual Environment**
 - **Location**: `.venv/` (managed by UV)
 - **Activation**: `source .venv/bin/activate` (Unix) or `.venv\Scripts\activate` (Windows)
 - **Auto-activation**: UV automatically manages the environment
+
+### **IMPORTANT: Sync to Backend Pip Env after Dependency Changes**
+This project uses UV locally, but the Research Pulse backend uses pip. When you add or change dependencies here, you MUST re-install this package into the backend's virtualenv so the backend can import it.
+
+Steps (Unix/macOS):
+```
+# From the repo root
+cd /Users/itaics/Code/research-pulse
+
+# 1) Activate backend venv (choose the one that exists)
+# Option A: project root venv
+if [ -f .venv/bin/activate ]; then source .venv/bin/activate; fi
+
+# Option B: backend/venv
+if [ -f backend/venv/bin/activate ]; then source backend/venv/bin/activate; fi
+
+# 2) Install MCP server package in editable mode (installs its deps too)
+pip install -e /Users/itaics/Code/mcp-server-data-exploration
+
+# (Optional) If you need to refresh deps, you can uninstall then reinstall
+# pip uninstall -y mcp-server-ds && pip install -e /Users/itaics/Code/mcp-server-data-exploration
+```
+
+Notes:
+- This resolves errors like: `No module named 'cacheout'` seen from the backend when a new dependency is added here.
+- Always run this after `uv add ...` in this project.
 
 ## 🔧 **Code Quality & Linting**
 
@@ -363,6 +375,16 @@ finally:
     os.unlink(csv_path)
 "
 ```
+
+### **MCP Logging Visibility (Important)**
+- FastMCP stdio transport uses stdout for the MCP protocol and prints its banners to stderr.
+- To ensure your server-side messages appear in backend logs:
+  - For startup identity lines printed by wrappers (e.g., backend/mcp_tools scripts), print to stderr:
+    - `print("[MCP-Server] Starting 'NAME' version X.Y.Z", file=sys.stderr, flush=True)`
+  - For per-tool logs inside `server.py`, print to stderr (and optionally logger.info):
+    - `print(f"[MCP-Server] ...", file=sys.stderr, flush=True)`
+  - Avoid relying solely on logger at init time; many runtimes suppress module-level logs.
+  - FastMCP Context logging (`ctx.info`) is only available inside @mcp.tool functions and logs to the MCP client stream (see docs: https://github.com/jlowin/fastmcp).
 
 ### **Logging**
 - **Server Logs**: Check console output for MCP server logs
