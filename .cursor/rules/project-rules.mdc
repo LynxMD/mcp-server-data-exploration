@@ -105,6 +105,20 @@ uv run pytest
 uv run python -m src.mcp_server_ds.server
 ```
 
+### **When adding/updating dependencies (IMPORTANT)**
+- After changing dependencies in this MCP project, you MUST re-install it into any consumer projects (e.g., backend) that import it.
+- Steps:
+  1) In this repo (MCP):
+     - `uv sync`
+  2) In the consumer repo (e.g., research-pulse backend), activate its venv and reinstall the local MCP package in editable mode. Example:
+     - `cd /Users/itaics/Code/research-pulse/backend`
+     - `source .venv/bin/activate` (or your venv)
+     - `uv pip install -e /Users/itaics/Code/mcp-server-data-exploration`
+  3) Restart any running backend/server processes so the new deps are loaded.
+
+Notes:
+- If you see `ImportError: No module named 'cacheout'` (or similar), it means the consumer venv hasn't been updated with the new MCP dependency; re-run step 2.
+
 ### **Virtual Environment**
 - **Location**: `.venv/` (managed by UV)
 - **Activation**: `source .venv/bin/activate` (Unix) or `.venv\Scripts\activate` (Windows)
