@@ -104,6 +104,10 @@ class ScriptRunner:
         # Default: Cacheout-backed TTL in-memory store to prevent memory collapse
         # while remaining infra-free for demos
         self.data_manager = data_manager or TTLInMemoryDataManager()
+        logger.info(
+            "ScriptRunner initialized with DataManager: %s",
+            self.data_manager.__class__.__name__,
+        )
         # Session-based notes: {session_id: [notes]}
         self.session_notes: dict[str, list[str]] = {}
         # Session-based DataFrame counters: {session_id: count}
