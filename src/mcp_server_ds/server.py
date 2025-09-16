@@ -24,6 +24,14 @@ from .data_manager import DataManager
 from .ttl_in_memory_data_manager import TTLInMemoryDataManager
 
 logger = logging.getLogger(__name__)
+# Ensure logs are visible in the FastMCP subprocess even if no handlers configured
+if not logger.handlers:
+    _handler = logging.StreamHandler(sys.stdout)
+    _handler.setLevel(logging.INFO)
+    _formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+    _handler.setFormatter(_formatter)
+    logger.addHandler(_handler)
+logger.setLevel(logging.INFO)
 logger.info("Starting FastMCP 2.0 data science exploration server")
 
 # Create FastMCP instance
