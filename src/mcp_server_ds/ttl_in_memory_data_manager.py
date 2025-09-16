@@ -19,7 +19,7 @@ from __future__ import annotations
 import threading
 import time
 from collections import OrderedDict
-from typing import Any, Optional, cast, Tuple
+from typing import Any, Optional, cast
 import pickle
 import psutil
 
@@ -201,9 +201,22 @@ class TTLInMemoryDataManager(DataManager):
     def can_fit_in_memory(self, session_id: str, additional_size: int) -> bool:
         """Check if additional data can fit in memory without exceeding thresholds."""
         with self._lock:
-            # Simple heuristic: if we're under 90% memory usage, we can fit more
+            # Check system memory usage first
             memory_usage = psutil.virtual_memory().percent
-            return memory_usage < 90.0
+            if memory_usage >= 90.0:
+                return False
+
+            # Check if we have space in our cache (max_sessions limit)
+            if len(self._sessions) >= self._max_sessions:
+                return False
+
+            # Check if the session would exceed max_items_per_session
+            if session_id in self._sessions:
+                payload = self._get_payload(session_id)
+                if payload and len(payload["data"]) >= self._max_items_per_session:
+                    return False
+
+            return True
 
     def get_oldest_sessions(self, limit: int = 10) -> list[tuple[str, float]]:
         """Get the oldest sessions by last access time."""

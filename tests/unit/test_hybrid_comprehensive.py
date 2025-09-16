@@ -170,7 +170,11 @@ class TestHybridComprehensive:
                 can_fit = manager.can_fit_in_memory("session1", data_size)
 
                 # At 90% usage, should trigger memory pressure relief
-                assert can_fit is True, "Should be able to fit after pressure relief"
+                # If memory is truly full after pressure relief, should return False
+                # This allows fallback to disk-only access (Scenario 3 from business logic)
+                assert can_fit is False, (
+                    "Should return False when memory is truly full, enabling disk-only fallback"
+                )
 
                 # Add data - should trigger memory pressure relief
                 data = create_mock_dataframe(0.1)

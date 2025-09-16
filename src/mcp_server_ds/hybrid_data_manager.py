@@ -23,7 +23,7 @@ Architecture:
 from __future__ import annotations
 
 import threading
-from typing import Any, Tuple
+from typing import Any
 import psutil
 
 from .base_data_manager import DataManager
@@ -105,7 +105,7 @@ class HybridDataManager(DataManager):
     def _check_memory_pressure(self) -> bool:
         """Check if memory usage is above threshold."""
         memory_usage = psutil.virtual_memory().percent
-        return memory_usage >= self._memory_threshold_percent
+        return bool(memory_usage >= self._memory_threshold_percent)
 
     def _relieve_memory_pressure(self, required_size: int = 0) -> None:
         """
@@ -327,9 +327,9 @@ class HybridDataManager(DataManager):
             # Try to relieve pressure and check again
             self._relieve_memory_pressure(additional_size)
 
-            # After pressure relief, we should be able to fit (hybrid manager always tries to make space)
-            # The hybrid manager can always fall back to disk-only if memory is truly full
-            return True
+            # Check again after pressure relief - if still can't fit, return False
+            # This allows the hybrid manager to fall back to disk-only access
+            return self._memory_manager.can_fit_in_memory(session_id, additional_size)
 
     def get_oldest_sessions(self, limit: int = 10) -> list[tuple[str, float]]:
         with self._lock:
@@ -378,9 +378,8 @@ class HybridDataManager(DataManager):
             memory_sessions = set(self.get_memory_sessions())
             disk_sessions = []
 
-            # This is a bit hacky since we don't have a direct way to get all disk sessions
-            # We'll use the filesystem manager's metadata
-            for session_id in self._filesystem_manager._metadata.keys():
+            # Get all sessions from filesystem manager
+            for session_id in self._filesystem_manager.get_all_session_ids():
                 if session_id not in memory_sessions:
                     disk_sessions.append(session_id)
 

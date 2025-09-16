@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
-from typing import Any, Dict, Tuple
+from typing import Any
 import pandas as pd
 import diskcache
 
@@ -68,15 +68,31 @@ class DiskCacheDataManager(DataManager):
             eviction_policy="least-recently-used",
         )
 
-    @property
-    def _metadata(self) -> dict[str, SessionMetadata]:
-        """Get metadata dictionary for testing compatibility."""
-        metadata_dict = {}
+    def get_all_session_ids(self) -> list[str]:
+        """Get all session IDs that have metadata."""
+        session_ids = []
         for key in self._metadata_cache:
             if key.startswith("metadata:"):
                 session_id = key[9:]  # Remove "metadata:" prefix
-                metadata_dict[session_id] = self._metadata_cache[key]
-        return metadata_dict
+                try:
+                    # Verify the metadata is accessible
+                    _ = self._metadata_cache[key]
+                    session_ids.append(session_id)
+                except Exception as e:
+                    # Self-heal: delete corrupted metadata entries to prevent repeated errors
+                    import sys
+
+                    print(
+                        f"[MCP-DEBUG] Deleting corrupted metadata in get_all_session_ids {key}: {e}",
+                        file=sys.stderr,
+                    )
+                    try:
+                        del self._metadata_cache[key]
+                    except Exception:
+                        # Best-effort deletion; continue
+                        pass
+                    continue
+        return session_ids
 
     def __enter__(self):
         """Context manager entry."""
@@ -242,7 +258,7 @@ class DiskCacheDataManager(DataManager):
         metadata_key = self._get_metadata_key(session_id)
         if metadata_key in self._metadata_cache:
             metadata = self._metadata_cache[metadata_key]
-            return metadata.item_sizes.get(df_name, 0)
+            return int(metadata.item_sizes.get(df_name, 0))
         return 0
 
     def get_session_size(self, session_id: str) -> int:
@@ -250,7 +266,7 @@ class DiskCacheDataManager(DataManager):
         metadata_key = self._get_metadata_key(session_id)
         if metadata_key in self._metadata_cache:
             metadata = self._metadata_cache[metadata_key]
-            return metadata.total_size_bytes
+            return int(metadata.total_size_bytes)
         return 0
 
     def get_storage_stats(self) -> StorageStats:
@@ -263,9 +279,24 @@ class DiskCacheDataManager(DataManager):
         for key in self._metadata_cache:
             if key.startswith("metadata:"):
                 total_sessions += 1
-                metadata = self._metadata_cache[key]
-                total_items += len(metadata.item_sizes)
-                total_size_bytes += metadata.total_size_bytes
+                try:
+                    metadata = self._metadata_cache[key]
+                    total_items += len(metadata.item_sizes)
+                    total_size_bytes += metadata.total_size_bytes
+                except Exception as e:
+                    # Self-heal: delete corrupted metadata entries to prevent repeated errors
+                    import sys
+
+                    print(
+                        f"[MCP-DEBUG] Deleting corrupted metadata {key}: {e}",
+                        file=sys.stderr,
+                    )
+                    try:
+                        del self._metadata_cache[key]
+                    except Exception:
+                        # Best-effort deletion; continue
+                        pass
+                    continue
 
         return StorageStats(
             total_sessions=total_sessions,
@@ -282,7 +313,7 @@ class DiskCacheDataManager(DataManager):
             import psutil
 
             disk_usage = psutil.disk_usage(str(self._cache_dir))
-            return (disk_usage.used / disk_usage.total) * 100
+            return float((disk_usage.used / disk_usage.total) * 100)
         except Exception:
             return 0.0
 

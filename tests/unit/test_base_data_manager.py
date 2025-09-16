@@ -26,7 +26,7 @@ class ConcreteDataManager(DataManager):
         )
 
     def get_session_data(self, session_id: str) -> dict:
-        return self.data.get(session_id, {})
+        return dict(self.data.get(session_id, {}))
 
     def set_session_data(self, session_id: str, data: dict) -> None:
         self.data[session_id] = data
@@ -47,7 +47,7 @@ class ConcreteDataManager(DataManager):
         self.data.pop(session_id, None)
 
     def get_dataframe_size(self, session_id: str, df_name: str) -> int:
-        return self.sizes.get(f"{session_id}:{df_name}", 0)
+        return int(self.sizes.get(f"{session_id}:{df_name}", 0))
 
     def get_session_size(self, session_id: str) -> int:
         session_data = self.data.get(session_id, {})

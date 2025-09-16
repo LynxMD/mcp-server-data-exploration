@@ -6,7 +6,7 @@ for all data storage implementations.
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, Tuple
+from typing import Any
 
 from .storage_types import StorageStats
 

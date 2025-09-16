@@ -103,7 +103,7 @@ class MockTempDirectory:
             tempfile.tempdir = self._original_tempdir
 
 
-def create_mock_dataframe(size_mb: float = 1.0) -> "pd.DataFrame":
+def create_mock_dataframe(size_mb: float = 1.0):
     """Create a mock DataFrame of specified size."""
     import pandas as pd
 

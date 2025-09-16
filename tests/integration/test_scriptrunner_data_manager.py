@@ -5,8 +5,8 @@ Integration tests for ScriptRunner with DataManager abstraction.
 import pytest
 import pandas as pd
 from mcp_server_ds.server import ScriptRunner
-from mcp_server_ds.in_memory_data_manager import InMemoryDataManager
 from mcp_server_ds.ttl_in_memory_data_manager import TTLInMemoryDataManager
+from mcp_server_ds.hybrid_data_manager import HybridDataManager
 
 
 class TestScriptRunnerDataManagerIntegration:
@@ -14,20 +14,20 @@ class TestScriptRunnerDataManagerIntegration:
 
     def setup_method(self):
         """Set up test fixtures."""
-        self.data_manager = InMemoryDataManager()
+        self.data_manager = TTLInMemoryDataManager()
         self.script_runner = ScriptRunner(data_manager=self.data_manager)
         self.session_id = "test_session_123"
 
     def test_script_runner_initialization_with_custom_data_manager(self):
         """Test ScriptRunner can be initialized with custom DataManager."""
         assert self.script_runner.data_manager is self.data_manager
-        assert isinstance(self.script_runner.data_manager, InMemoryDataManager)
+        assert isinstance(self.script_runner.data_manager, TTLInMemoryDataManager)
 
     def test_script_runner_initialization_with_default_data_manager(self):
         """Test ScriptRunner initializes with a default DataManager implementation."""
         default_runner = ScriptRunner()
         assert isinstance(
-            default_runner.data_manager, (InMemoryDataManager, TTLInMemoryDataManager)
+            default_runner.data_manager, (TTLInMemoryDataManager, HybridDataManager)
         )
 
     def test_load_csv_uses_data_manager(self):

@@ -6,7 +6,6 @@ This module contains the core data structures and enums used by the storage syst
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Dict
 
 
 class StorageTier(Enum):

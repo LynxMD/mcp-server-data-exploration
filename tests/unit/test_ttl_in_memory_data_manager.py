@@ -69,3 +69,47 @@ class TestTTLInMemoryDataManager:
         assert dm.has_session("s1")
         assert not dm.has_session("s2")
         assert dm.has_session("s3")
+
+    def test_remove_session_keyerror_handling(self):
+        """Test remove_session handles KeyError gracefully (lines 135-137)."""
+        dm = TTLInMemoryDataManager(
+            ttl_seconds=60, max_sessions=10, max_items_per_session=5
+        )
+
+        # Try to remove a session that doesn't exist
+        # This should not raise an exception due to KeyError handling
+        dm.remove_session("nonexistent_session")
+
+        # Verify it doesn't break anything
+        assert not dm.has_session("nonexistent_session")
+
+        # Add a session and then remove it normally
+        dm.set_dataframe("test_session", "df", pd.DataFrame({"x": [1]}))
+        assert dm.has_session("test_session")
+
+        dm.remove_session("test_session")
+        assert not dm.has_session("test_session")
+
+        # Try to remove the same session again - should handle KeyError gracefully
+        dm.remove_session("test_session")
+        assert not dm.has_session("test_session")
+
+    def test_remove_session_keyerror_coverage(self):
+        """Test remove_session KeyError handling for 100% coverage (lines 135-137)."""
+        dm = TTLInMemoryDataManager(
+            ttl_seconds=60, max_sessions=10, max_items_per_session=5
+        )
+
+        # Mock the cache to raise KeyError when trying to delete
+        original_delete = dm._sessions.delete
+
+        def keyerror_delete(key):
+            raise KeyError(f"Key not found: {key}")
+
+        dm._sessions.delete = keyerror_delete
+
+        # This should handle KeyError gracefully and return without exception
+        dm.remove_session("nonexistent_session")
+
+        # Restore original method
+        dm._sessions.delete = original_delete

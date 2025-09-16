@@ -6,7 +6,6 @@ to track session information and file metadata.
 """
 
 from dataclasses import dataclass
-from typing import Dict
 
 
 @dataclass

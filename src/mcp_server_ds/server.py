@@ -112,11 +112,55 @@ class ScriptRunner:
         # Initialize data manager
         # Default: Hybrid storage (memory + filesystem) for optimal performance
         # and persistence. Falls back to TTL in-memory for demos if needed.
-        self.data_manager = data_manager or HybridDataManager()
+        try:
+            # Try to create HybridDataManager with safe cache directory
+            import tempfile
+            import os
+
+            cache_dir = os.path.join(tempfile.gettempdir(), "mcp_cache")
+            os.makedirs(cache_dir, exist_ok=True)
+
+            self.data_manager = data_manager or HybridDataManager(
+                cache_dir=cache_dir,
+                memory_ttl_seconds=5 * 60 * 60,  # 5 hours
+                filesystem_ttl_seconds=7 * 24 * 60 * 60,  # 7 days
+            )
+        except Exception as e:
+            # Fallback to TTL in-memory if hybrid fails
+            import sys
+
+            print(
+                f"[MCP-DEBUG] HybridDataManager failed, falling back to TTL: {e}",
+                file=sys.stderr,
+            )
+            import traceback
+
+            traceback.print_exc(file=sys.stderr)
+            from .ttl_in_memory_data_manager import TTLInMemoryDataManager
+
+            self.data_manager = TTLInMemoryDataManager()
         # Session-based notes: {session_id: [notes]}
         self.session_notes: dict[str, list[str]] = {}
         # Session-based DataFrame counters: {session_id: count}
         self.session_df_count: dict[str, int] = {}
+
+        # Add comprehensive logging for debugging
+        import sys
+
+        print(
+            f"[MCP-DEBUG] ScriptRunner initialized with {self.data_manager.__class__.__name__}",
+            file=sys.stderr,
+        )
+        if hasattr(self.data_manager, "_memory_manager"):
+            print(
+                f"[MCP-DEBUG] Memory manager: {self.data_manager._memory_manager.__class__.__name__}",
+                file=sys.stderr,
+            )
+        if hasattr(self.data_manager, "_filesystem_manager"):
+            print(
+                f"[MCP-DEBUG] Filesystem manager: {self.data_manager._filesystem_manager.__class__.__name__}",
+                file=sys.stderr,
+            )
 
     def log_system_status(self) -> None:
         """Delegate to system utils for logging and alerting."""
@@ -153,7 +197,7 @@ class ScriptRunner:
         return self.session_df_count[session_id]
 
     def load_csv(
-        self, csv_path: str, df_name: str | None = None, session_id: str = None
+        self, csv_path: str, df_name: str | None = None, session_id: str | None = None
     ) -> str:
         """Load CSV with session isolation."""
         if not session_id:
@@ -168,7 +212,42 @@ class ScriptRunner:
 
         try:
             df_data = pd.read_csv(csv_path)
+
+            # Add comprehensive logging
+            import sys
+
+            print(
+                f"[MCP-DEBUG] load_csv: Loading {csv_path} as {df_name} for session {session_id}",
+                file=sys.stderr,
+            )
+            print(f"[MCP-DEBUG] DataFrame shape: {df_data.shape}", file=sys.stderr)
+
             self.data_manager.set_dataframe(session_id, df_name, df_data)
+
+            # Verify storage
+            stored_data = self.data_manager.get_dataframe(session_id, df_name)
+            if stored_data is not None:
+                print(
+                    f"[MCP-DEBUG] ✅ Data stored successfully in {self.data_manager.__class__.__name__}",
+                    file=sys.stderr,
+                )
+                print(
+                    f"[MCP-DEBUG] Stored data shape: {stored_data.shape}",
+                    file=sys.stderr,
+                )
+            else:
+                print(
+                    "[MCP-DEBUG] ❌ Data storage failed - get_dataframe returned None",
+                    file=sys.stderr,
+                )
+
+            # Check storage stats
+            if hasattr(self.data_manager, "get_storage_stats"):
+                stats = self.data_manager.get_storage_stats()
+                print(
+                    f"[MCP-DEBUG] Storage stats: {stats.total_sessions} sessions, {stats.total_items} items",
+                    file=sys.stderr,
+                )
             session_notes.append(
                 f"Successfully loaded CSV into dataframe '{df_name}' for session '{session_id}'"
             )
@@ -182,7 +261,7 @@ class ScriptRunner:
         self,
         script: str,
         save_to_memory: list[str] | None = None,
-        session_id: str = None,
+        session_id: str | None = None,
     ) -> str:
         """Safely run a script with session isolation."""
         if not session_id:
@@ -192,10 +271,39 @@ class ScriptRunner:
         session_data = self._get_session_data(session_id)
         session_notes = self._get_session_notes(session_id)
 
+        # Add comprehensive logging
+        import sys
+
+        print(
+            f"[MCP-DEBUG] safe_eval: Starting script execution for session {session_id}",
+            file=sys.stderr,
+        )
+        print(
+            f"[MCP-DEBUG] Session data keys: {list(session_data.keys())}",
+            file=sys.stderr,
+        )
+        print(
+            f"[MCP-DEBUG] Data manager type: {self.data_manager.__class__.__name__}",
+            file=sys.stderr,
+        )
+
+        # Check storage stats
+        if hasattr(self.data_manager, "get_storage_stats"):
+            stats = self.data_manager.get_storage_stats()
+            print(
+                f"[MCP-DEBUG] Storage stats: {stats.total_sessions} sessions, {stats.total_items} items",
+                file=sys.stderr,
+            )
+
         # Extract dataframes from session-specific data
         local_dict = {
             **{df_name: df for df_name, df in session_data.items()},
         }
+
+        print(
+            f"[MCP-DEBUG] Local dict keys for script: {list(local_dict.keys())}",
+            file=sys.stderr,
+        )
 
         # Execute the script and return the result
         try:
@@ -231,12 +339,42 @@ class ScriptRunner:
 
         # Save dataframes to session-specific memory
         if save_to_memory:
+            print(
+                f"[MCP-DEBUG] save_to_memory requested for: {save_to_memory}",
+                file=sys.stderr,
+            )
             for df_name in save_to_memory:
+                df_data = local_dict.get(df_name)
+                if df_data is not None:
+                    print(
+                        f"[MCP-DEBUG] Saving {df_name} to session {session_id}, type: {type(df_data)}",
+                        file=sys.stderr,
+                    )
+                    if hasattr(df_data, "shape"):
+                        print(
+                            f"[MCP-DEBUG] {df_name} shape: {df_data.shape}",
+                            file=sys.stderr,
+                        )
+
+                    self.data_manager.set_dataframe(session_id, df_name, df_data)
+
+                    # Verify save
+                    stored = self.data_manager.get_dataframe(session_id, df_name)
+                    if stored is not None:
+                        print(
+                            f"[MCP-DEBUG] ✅ {df_name} saved successfully",
+                            file=sys.stderr,
+                        )
+                    else:
+                        print(f"[MCP-DEBUG] ❌ {df_name} save failed", file=sys.stderr)
+                else:
+                    print(
+                        f"[MCP-DEBUG] ❌ {df_name} not found in local_dict",
+                        file=sys.stderr,
+                    )
+
                 session_notes.append(
                     f"Saving dataframe '{df_name}' to memory for session '{session_id}'"
-                )
-                self.data_manager.set_dataframe(
-                    session_id, df_name, local_dict.get(df_name)
                 )
 
         output = std_out_script if std_out_script else "No output"
@@ -257,7 +395,9 @@ def explore_data(csv_path: str, topic: str = "general data exploration") -> str:
 
 # === TOOLS ===
 @mcp.tool
-def load_csv(csv_path: str, df_name: str | None = None, session_id: str = None) -> str:
+def load_csv(
+    csv_path: str, df_name: str | None = None, session_id: str | None = None
+) -> str:
     """Load a local CSV file into a DataFrame with session isolation.
 
     Args:
@@ -282,7 +422,7 @@ def load_csv(csv_path: str, df_name: str | None = None, session_id: str = None) 
 
 @mcp.tool
 def run_script(
-    script: str, save_to_memory: list[str] | None = None, session_id: str = None
+    script: str, save_to_memory: list[str] | None = None, session_id: str | None = None
 ) -> str:
     """Execute Python scripts for data analytics tasks with session isolation.
 
