@@ -20,8 +20,8 @@ import pytesseract
 import pymupdf
 
 # Data management
-from .data_manager import DataManager
-from .ttl_in_memory_data_manager import TTLInMemoryDataManager
+from .base_data_manager import DataManager
+from .hybrid_data_manager import HybridDataManager
 from .system_utils import log_system_status
 
 logger = logging.getLogger(__name__)
@@ -110,9 +110,9 @@ Please begin your analysis by loading the CSV file and providing an initial expl
 class ScriptRunner:
     def __init__(self, data_manager: DataManager | None = None):
         # Initialize data manager
-        # Default: Cacheout-backed TTL in-memory store to prevent memory collapse
-        # while remaining infra-free for demos
-        self.data_manager = data_manager or TTLInMemoryDataManager()
+        # Default: Hybrid storage (memory + filesystem) for optimal performance
+        # and persistence. Falls back to TTL in-memory for demos if needed.
+        self.data_manager = data_manager or HybridDataManager()
         # Session-based notes: {session_id: [notes]}
         self.session_notes: dict[str, list[str]] = {}
         # Session-based DataFrame counters: {session_id: count}

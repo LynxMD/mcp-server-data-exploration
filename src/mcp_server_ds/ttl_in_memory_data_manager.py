@@ -19,11 +19,14 @@ from __future__ import annotations
 import threading
 import time
 from collections import OrderedDict
-from typing import Any, Optional, cast
+from typing import Any, Optional, cast, Tuple
+import pickle
+import psutil
 
 from cacheout import Cache
 
-from .data_manager import DataManager
+from .base_data_manager import DataManager
+from .storage_types import StorageStats, StorageTier
 
 
 class TTLInMemoryDataManager(DataManager):
@@ -41,7 +44,8 @@ class TTLInMemoryDataManager(DataManager):
 
         # Cache sessions by id, with TTL and size cap
         self._sessions = Cache(maxsize=max_sessions, ttl=ttl_seconds)
-        self._lock = threading.Lock()
+        # Use re-entrant lock to avoid deadlocks when nested methods acquire the same lock
+        self._lock = threading.RLock()
 
     # Internal helpers
     def _now(self) -> float:
@@ -131,3 +135,86 @@ class TTLInMemoryDataManager(DataManager):
             except KeyError:
                 # Already gone
                 return
+
+    def get_dataframe_size(self, session_id: str, df_name: str) -> int:
+        """Get the size in bytes of a specific DataFrame."""
+        with self._lock:
+            payload = self._get_payload(session_id)
+            if payload is None:
+                return 0
+            data: OrderedDict[str, Any] = payload["data"]
+            if df_name not in data:
+                return 0
+
+            try:
+                return len(
+                    pickle.dumps(data[df_name], protocol=pickle.HIGHEST_PROTOCOL)
+                )
+            except Exception:
+                return 0
+
+    def get_session_size(self, session_id: str) -> int:
+        """Get the total size in bytes of all data in a session."""
+        with self._lock:
+            payload = self._get_payload(session_id)
+            if payload is None:
+                return 0
+
+            total_size = 0
+            data: OrderedDict[str, Any] = payload["data"]
+            for df_name, df_data in data.items():
+                try:
+                    total_size += len(
+                        pickle.dumps(df_data, protocol=pickle.HIGHEST_PROTOCOL)
+                    )
+                except Exception:
+                    continue
+            return total_size
+
+    def get_storage_stats(self) -> StorageStats:
+        """Get comprehensive storage statistics."""
+        with self._lock:
+            total_sessions = len(self._sessions)
+            total_items = 0
+            total_size_bytes = 0
+
+            for session_id in list(self._sessions.keys()):
+                payload = self._get_payload(session_id)
+                if payload:
+                    data: OrderedDict[str, Any] = payload["data"]
+                    total_items += len(data)
+                    total_size_bytes += self.get_session_size(session_id)
+
+            # Get system stats
+            memory_usage = psutil.virtual_memory().percent
+            disk_usage = psutil.disk_usage("/").percent
+
+            return StorageStats(
+                total_sessions=total_sessions,
+                total_items=total_items,
+                total_size_bytes=total_size_bytes,
+                memory_usage_percent=memory_usage,
+                disk_usage_percent=disk_usage,
+                tier_distribution={StorageTier.MEMORY: total_items},
+            )
+
+    def can_fit_in_memory(self, session_id: str, additional_size: int) -> bool:
+        """Check if additional data can fit in memory without exceeding thresholds."""
+        with self._lock:
+            # Simple heuristic: if we're under 90% memory usage, we can fit more
+            memory_usage = psutil.virtual_memory().percent
+            return memory_usage < 90.0
+
+    def get_oldest_sessions(self, limit: int = 10) -> list[tuple[str, float]]:
+        """Get the oldest sessions by last access time."""
+        with self._lock:
+            sessions_with_times = []
+
+            for session_id in list(self._sessions.keys()):
+                payload = self._get_payload(session_id)
+                if payload:
+                    sessions_with_times.append((session_id, payload["last_access"]))
+
+            # Sort by last access time (oldest first)
+            sessions_with_times.sort(key=lambda x: x[1])
+            return sessions_with_times[:limit]
