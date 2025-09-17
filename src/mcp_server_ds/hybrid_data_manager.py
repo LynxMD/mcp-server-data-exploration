@@ -196,29 +196,57 @@ class HybridDataManager(DataManager):
 
     def set_session_data(self, session_id: str, data: dict[str, Any]) -> None:
         with self._lock:
-            # Always write to both memory and filesystem
-            self._memory_manager.set_session_data(session_id, data)
-            self._filesystem_manager.set_session_data(session_id, data)
+            # Always attempt to write to both memory and filesystem with graceful degradation
+            memory_error: Exception | None = None
+            filesystem_error: Exception | None = None
+
+            try:
+                self._memory_manager.set_session_data(session_id, data)
+            except Exception as e:  # noqa: BLE001
+                memory_error = e
+
+            try:
+                self._filesystem_manager.set_session_data(session_id, data)
+            except Exception as e:  # noqa: BLE001
+                filesystem_error = e
+
+            # If both tiers fail, raise a combined error; otherwise, proceed gracefully
+            if memory_error and filesystem_error:
+                raise RuntimeError(
+                    f"Both memory and filesystem writes failed: memory={memory_error}, filesystem={filesystem_error}"
+                )
 
     def get_dataframe(self, session_id: str, df_name: str) -> Any:
         with self._lock:
             # Try memory first
-            if self._memory_manager.has_session(session_id):
-                data = self._memory_manager.get_dataframe(session_id, df_name)
-                if data is not None:
-                    # Validate data integrity - if it's corrupted, fallback to disk
-                    if self._is_data_valid(data):
-                        return data
-                    else:
-                        # Data is corrupted, remove from memory and fallback to disk
-                        self._memory_manager.remove_session(session_id)
+            try:
+                if self._memory_manager.has_session(session_id):
+                    data = self._memory_manager.get_dataframe(session_id, df_name)
+                    if data is not None:
+                        # Validate data integrity - if it's corrupted, fallback to disk
+                        if self._is_data_valid(data):
+                            return data
+                        else:
+                            # Data is corrupted, remove from memory and fallback to disk
+                            self._memory_manager.remove_session(session_id)
+            except Exception:  # noqa: BLE001
+                # Memory access failure -> graceful fallback to disk below
+                pass
 
             # Try to load session from disk
-            if self._load_session_from_disk(session_id):
-                return self._memory_manager.get_dataframe(session_id, df_name)
+            try:
+                if self._load_session_from_disk(session_id):
+                    return self._memory_manager.get_dataframe(session_id, df_name)
+            except Exception:  # noqa: BLE001
+                # Loading to memory failed; try direct disk access below
+                pass
 
             # Fallback to direct disk access
-            return self._filesystem_manager.get_dataframe(session_id, df_name)
+            try:
+                return self._filesystem_manager.get_dataframe(session_id, df_name)
+            except Exception:
+                # Both memory and filesystem failed
+                return None
 
     def set_dataframe(self, session_id: str, df_name: str, data: Any) -> None:
         with self._lock:
@@ -227,9 +255,24 @@ class HybridDataManager(DataManager):
             if not self._memory_manager.can_fit_in_memory(session_id, data_size):
                 self._relieve_memory_pressure(data_size)
 
-            # Always write to both memory and filesystem
-            self._memory_manager.set_dataframe(session_id, df_name, data)
-            self._filesystem_manager.set_dataframe(session_id, df_name, data)
+            # Always attempt to write to both memory and filesystem, but degrade gracefully
+            memory_error: Exception | None = None
+            filesystem_error: Exception | None = None
+
+            try:
+                self._memory_manager.set_dataframe(session_id, df_name, data)
+            except Exception as e:  # noqa: BLE001
+                memory_error = e
+
+            try:
+                self._filesystem_manager.set_dataframe(session_id, df_name, data)
+            except Exception as e:  # noqa: BLE001
+                filesystem_error = e
+
+            if memory_error and filesystem_error:
+                raise RuntimeError(
+                    f"Both memory and filesystem writes failed: memory={memory_error}, filesystem={filesystem_error}"
+                )
 
     def _estimate_data_size(self, data: Any) -> int:
         """Estimate the size of data in bytes."""

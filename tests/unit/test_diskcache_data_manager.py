@@ -549,6 +549,39 @@ class TestDiskCacheDataManager:
         finally:
             manager.close()
 
+    def test_get_session_data_refreshes_ttl_with_set_fallback_on_touch_absent(
+        self, temp_dir, monkeypatch
+    ):
+        """get_session_data should also refresh TTL; exercise set() fallback when touch() is unavailable."""
+        manager = DiskCacheDataManager(
+            cache_dir=temp_dir,
+            ttl_seconds=10,
+        )
+
+        try:
+            # Insert multiple items in a session
+            df1 = pd.DataFrame({"A": [1]})
+            df2 = pd.DataFrame({"B": [2]})
+            manager.set_dataframe("s_meta", "df1", df1)
+            manager.set_dataframe("s_meta", "df2", df2)
+
+            # Force touch to be unavailable to hit the fallback path inside get_session_data
+            original_touch = getattr(manager._cache, "touch", None)
+
+            def raising_touch(*args, **kwargs):  # noqa: ANN001, D401
+                raise AttributeError("touch not available")
+
+            if original_touch is not None:
+                monkeypatch.setattr(
+                    manager._cache, "touch", raising_touch, raising=True
+                )
+
+            # Now call get_session_data which will iterate and refresh TTL per item
+            session_data = manager.get_session_data("s_meta")
+            assert set(session_data.keys()) == {"df1", "df2"}
+        finally:
+            manager.close()
+
     def test_multiple_dataframes_per_session(self, manager):
         """Test multiple DataFrames per session."""
         # Add multiple DataFrames to same session
