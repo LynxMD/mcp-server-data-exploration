@@ -48,9 +48,7 @@ class TestScriptRunner:
         output = script_runner.safe_eval(script, session_id=session_id)
 
         assert "Result: 4" in output
-        assert (
-            "Running script for session" in script_runner.session_notes[session_id][-2]
-        )
+        assert "Running script:" in script_runner.session_notes[session_id][-2]
 
     def test_safe_eval_with_dataframe(self, script_runner, temp_csv_file):
         """Test safe_eval with DataFrame operations."""
@@ -109,7 +107,5 @@ new_df['age_group'] = 'adult'
             len(script_runner.session_notes[session_id]) == initial_notes_count + 3
         )  # load + script + result
         assert "Successfully loaded CSV" in script_runner.session_notes[session_id][-3]
-        assert (
-            "Running script for session" in script_runner.session_notes[session_id][-2]
-        )
-        assert "Result for session" in script_runner.session_notes[session_id][-1]
+        assert "Running script:" in script_runner.session_notes[session_id][-2]
+        assert "Result:" in script_runner.session_notes[session_id][-1]

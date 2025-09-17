@@ -97,11 +97,11 @@ class TestScriptRunnerSessionIsolation:
             assert len(session1_notes) == 1
             assert len(session2_notes) == 1
 
-            assert "user_123_session_456" in session1_notes[0]
-            assert "user_789_session_012" in session2_notes[0]
+            assert "Successfully loaded CSV into dataframe 'df1'" in session1_notes[0]
+            assert "Successfully loaded CSV into dataframe 'df1'" in session2_notes[0]
 
-            # Notes should be different
-            assert session1_notes[0] != session2_notes[0]
+            # Notes are now privacy-safe (no session IDs), so they can be identical
+            # The isolation is maintained by the session_id parameter, not the message content
 
         finally:
             os.unlink(csv_path)
@@ -150,8 +150,8 @@ class TestScriptRunnerSessionIsolation:
             assert len(session1_notes) == 3  # load_csv + safe_eval + result
             assert len(session2_notes) == 3  # load_csv + safe_eval + result
 
-            assert "user_123_session_456" in session1_notes[1]  # safe_eval note
-            assert "user_789_session_012" in session2_notes[1]  # safe_eval note
+            assert "Running script:" in session1_notes[1]  # safe_eval note
+            assert "Running script:" in session2_notes[1]  # safe_eval note
 
         finally:
             os.unlink(csv_path1)
@@ -389,10 +389,16 @@ class TestMCPResourcesSessionIsolation:
             notes1 = self.script_runner._get_session_notes(session1)
             notes2 = self.script_runner._get_session_notes(session2)
 
-            # Notes should be different and session-specific
-            assert any("user_123_session_456" in note for note in notes1)
-            assert any("user_789_session_012" in note for note in notes2)
-            assert notes1 != notes2
+            # Notes should contain expected content (privacy-safe, no session IDs)
+            assert any(
+                "Successfully loaded CSV into dataframe 'df1'" in note
+                for note in notes1
+            )
+            assert any(
+                "Successfully loaded CSV into dataframe 'df1'" in note
+                for note in notes2
+            )
+            # Notes can be identical now (privacy-safe), isolation is by session_id parameter
 
         finally:
             os.unlink(csv_path)

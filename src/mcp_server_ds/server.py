@@ -1,6 +1,7 @@
 import logging
 import glob
 import os
+import tempfile
 from typing import Any
 
 # FastMCP 2.0 import
@@ -12,7 +13,6 @@ import numpy as np
 import scipy
 import sklearn
 import statsmodels.api as sm
-from io import StringIO
 import sys
 import pyarrow
 from PIL import Image
@@ -23,6 +23,11 @@ import pymupdf
 from .base_data_manager import DataManager
 from .hybrid_data_manager import HybridDataManager
 from .system_utils import log_system_status
+from .utils.session_utils import validate_session_id
+from .utils.io_utils import read_csv_strict
+from .utils.script_exec import build_exec_globals, capture_stdout_exec
+from .utils.inspect_utils import summarize_session_data
+from .utils.df_info_utils import summarize_dataframe_info
 
 logger = logging.getLogger(__name__)
 # Ensure logs are visible in the FastMCP subprocess even if no handlers configured
@@ -112,33 +117,15 @@ class ScriptRunner:
         # Initialize data manager
         # Default: Hybrid storage (memory + filesystem) for optimal performance
         # and persistence. Falls back to TTL in-memory for demos if needed.
-        try:
-            # Try to create HybridDataManager with safe cache directory
-            import tempfile
-            import os
+        # Create HybridDataManager with safe cache directory; fail fast on error
+        cache_dir = os.path.join(tempfile.gettempdir(), "mcp_cache")
+        os.makedirs(cache_dir, exist_ok=True)
 
-            cache_dir = os.path.join(tempfile.gettempdir(), "mcp_cache")
-            os.makedirs(cache_dir, exist_ok=True)
-
-            self.data_manager = data_manager or HybridDataManager(
-                cache_dir=cache_dir,
-                memory_ttl_seconds=5 * 60 * 60,  # 5 hours
-                filesystem_ttl_seconds=7 * 24 * 60 * 60,  # 7 days
-            )
-        except Exception as e:
-            # Fallback to TTL in-memory if hybrid fails
-            import sys
-
-            print(
-                f"[MCP-DEBUG] HybridDataManager failed, falling back to TTL: {e}",
-                file=sys.stderr,
-            )
-            import traceback
-
-            traceback.print_exc(file=sys.stderr)
-            from .ttl_in_memory_data_manager import TTLInMemoryDataManager
-
-            self.data_manager = TTLInMemoryDataManager()
+        self.data_manager = data_manager or HybridDataManager(
+            cache_dir=cache_dir,
+            memory_ttl_seconds=5 * 60 * 60,  # 5 hours
+            filesystem_ttl_seconds=7 * 24 * 60 * 60,  # 7 days
+        )
         # Session-based notes: {session_id: [notes]}
         self.session_notes: dict[str, list[str]] = {}
         # Session-based DataFrame counters: {session_id: count}
@@ -161,6 +148,24 @@ class ScriptRunner:
                 f"[MCP-DEBUG] Filesystem manager: {self.data_manager._filesystem_manager.__class__.__name__}",
                 file=sys.stderr,
             )
+
+    def inspect_memory(
+        self,
+        session_id: str,
+        include_preview: bool = True,
+        max_rows: int = 5,
+        max_cols: int = 10,
+    ) -> str:
+        """Return a human-readable summary of session data in memory/disk."""
+        session_id = validate_session_id(session_id)
+        session_data = self._get_session_data(session_id) or {}
+        return summarize_session_data(
+            session_id,
+            session_data,
+            include_preview=include_preview,
+            max_rows=max_rows,
+            max_cols=max_cols,
+        )
 
     def log_system_status(self) -> None:
         """Delegate to system utils for logging and alerting."""
@@ -200,10 +205,7 @@ class ScriptRunner:
         self, csv_path: str, df_name: str | None = None, session_id: str | None = None
     ) -> str:
         """Load CSV with session isolation."""
-        if not session_id:
-            raise ValueError("session_id is required for session isolation")
-
-        session_id = self._validate_session_id(session_id)
+        session_id = validate_session_id(session_id)
         session_notes = self._get_session_notes(session_id)
 
         df_count = self._increment_session_df_count(session_id)
@@ -211,7 +213,7 @@ class ScriptRunner:
             df_name = f"df_{df_count}"
 
         try:
-            df_data = pd.read_csv(csv_path)
+            df_data = read_csv_strict(csv_path)
 
             # Add comprehensive logging
             import sys
@@ -248,9 +250,7 @@ class ScriptRunner:
                     f"[MCP-DEBUG] Storage stats: {stats.total_sessions} sessions, {stats.total_items} items",
                     file=sys.stderr,
                 )
-            session_notes.append(
-                f"Successfully loaded CSV into dataframe '{df_name}' for session '{session_id}'"
-            )
+            session_notes.append(f"Successfully loaded CSV into dataframe '{df_name}'")
             return f"Successfully loaded CSV into dataframe '{df_name}'"
         except Exception as e:
             error_msg = f"Error loading CSV: {str(e)}"
@@ -264,10 +264,7 @@ class ScriptRunner:
         session_id: str | None = None,
     ) -> str:
         """Safely run a script with session isolation."""
-        if not session_id:
-            raise ValueError("session_id is required for session isolation")
-
-        session_id = self._validate_session_id(session_id)
+        session_id = validate_session_id(session_id)
         session_data = self._get_session_data(session_id)
         session_notes = self._get_session_notes(session_id)
 
@@ -275,7 +272,7 @@ class ScriptRunner:
         import sys
 
         print(
-            f"[MCP-DEBUG] safe_eval: Starting script execution for session {session_id}",
+            "[MCP-DEBUG] safe_eval: Starting script execution",
             file=sys.stderr,
         )
         print(
@@ -307,33 +304,16 @@ class ScriptRunner:
 
         # Execute the script and return the result
         try:
-            stdout_capture = StringIO()
-            old_stdout = sys.stdout
-            sys.stdout = stdout_capture
-            session_notes.append(
-                f"Running script for session '{session_id}': \n{script}"
-            )
-            # pylint: disable=exec-used
-            exec(
+            session_notes.append(f"Running script:\n{script}")
+            std_out_script = capture_stdout_exec(
                 script,
-                {
-                    "pd": pd,
-                    "np": np,
-                    "scipy": scipy,
-                    "sklearn": sklearn,
-                    "statsmodels": sm,
-                    "pyarrow": pyarrow,
-                    "Image": Image,
-                    "pytesseract": pytesseract,
-                    "pymupdf": pymupdf,
-                },
+                build_exec_globals(
+                    pd, np, scipy, sklearn, sm, pyarrow, Image, pytesseract, pymupdf
+                ),
                 local_dict,
             )
-            sys.stdout = old_stdout
-            std_out_script = stdout_capture.getvalue()
         except Exception as e:
-            sys.stdout = old_stdout
-            error_msg = f"Error running script for session '{session_id}': {str(e)}"
+            error_msg = f"Error running script: {str(e)}"
             session_notes.append(error_msg)
             raise Exception(str(e))
 
@@ -347,7 +327,7 @@ class ScriptRunner:
                 df_data = local_dict.get(df_name)
                 if df_data is not None:
                     print(
-                        f"[MCP-DEBUG] Saving {df_name} to session {session_id}, type: {type(df_data)}",
+                        f"[MCP-DEBUG] Saving {df_name}, type: {type(df_data)}",
                         file=sys.stderr,
                     )
                     if hasattr(df_data, "shape"):
@@ -373,12 +353,10 @@ class ScriptRunner:
                         file=sys.stderr,
                     )
 
-                session_notes.append(
-                    f"Saving dataframe '{df_name}' to memory for session '{session_id}'"
-                )
+                session_notes.append(f"Saving dataframe '{df_name}' to memory")
 
         output = std_out_script if std_out_script else "No output"
-        session_notes.append(f"Result for session '{session_id}': {output}")
+        session_notes.append(f"Result: {output}")
         return output
 
 
@@ -446,6 +424,63 @@ def run_script(
     return script_runner.safe_eval(script, save_to_memory, session_id)
 
 
+@mcp.tool
+def inspect_memory(
+    session_id: str,
+    include_preview: bool = True,
+    max_rows: int = 5,
+    max_cols: int = 10,
+) -> str:
+    """Inspect DataFrames stored for a session (read-only summary).
+
+    Args:
+        session_id: Session ID for data isolation
+        include_preview: Include head() preview per DataFrame
+        max_rows: Preview rows
+        max_cols: Max columns to list
+
+    Returns:
+        Human-readable summary of session memory state
+    """
+    session_id = validate_session_id(session_id)
+    script_runner.log_system_status()
+    return script_runner.inspect_memory(session_id, include_preview, max_rows, max_cols)
+
+
+@mcp.tool
+def get_dataframe_info(
+    df_name: str,
+    session_id: str | None = None,
+    max_cols_report: int = 20,
+    max_uniques_per_col: int = 5,
+    include_numeric_aggregates: bool = False,
+    include_quality_score: bool = False,
+    include_recommendations: bool = False,
+) -> str:
+    """Get detailed, privacy-safe information about a specific DataFrame in session memory.
+
+    Args:
+        df_name: Name of the DataFrame in session memory
+        session_id: Session ID for data isolation (required)
+        max_cols_report: Limit number of columns included in reports
+        max_uniques_per_col: Limit unique sample values for categorical columns
+    """
+    session_id = validate_session_id(session_id)
+    data = script_runner._get_session_data(session_id)
+    df = data.get(df_name)
+    if df is None:
+        return f"DataFrame '{df_name}' not found."
+    return summarize_dataframe_info(
+        df_name,
+        df,
+        max_cols_report,
+        max_uniques_per_col,
+        include_numeric_aggregates=include_numeric_aggregates,
+        include_quality_score=include_quality_score,
+        include_recommendations=include_recommendations,
+    )
+
+
 # === RESOURCES ===
 @mcp.resource("data-exploration://notes/{session_id}")
 def get_exploration_notes(session_id: str) -> str:
@@ -456,9 +491,7 @@ def get_exploration_notes(session_id: str) -> str:
 
     session_notes = script_runner._get_session_notes(session_id)
     return (
-        "\n".join(session_notes)
-        if session_notes
-        else f"No notes yet for session '{session_id}'"
+        "\n".join(session_notes) if session_notes else "No notes yet for this session"
     )
 
 
@@ -477,11 +510,6 @@ def list_csv_files() -> str:
         return "No CSV files found in common directories (~/code/ai/data, ~/Downloads, ~/tmp)"
 
     return "CSV file listing:\n" + "\n".join(csv_files)
-
-
-# Note: list_dataframes and get_analysis_history resources removed
-# These functions are no longer compatible with session-based storage
-# Use session-specific resources instead (e.g., data-exploration://notes/{session_id})
 
 
 # === MAIN ENTRY POINT ===
