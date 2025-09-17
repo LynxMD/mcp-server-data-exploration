@@ -450,13 +450,102 @@ class TestDiskCacheDataManager:
             retrieved = manager.get_dataframe("session1", "df1")
             assert retrieved is not None
 
-            # Wait for TTL to expire
-            time.sleep(2)
+            # Wait less than TTL and access again to refresh (sliding TTL)
+            time.sleep(0.6)
+            retrieved_mid = manager.get_dataframe("session1", "df1")
+            assert retrieved_mid is not None
 
-            # Data should still be accessible (diskcache handles TTL internally)
-            # The exact behavior depends on diskcache's internal cleanup
-            retrieved = manager.get_dataframe("session1", "df1")
-            # Note: diskcache may or may not return None depending on cleanup timing
+            # Now wait again so that total elapsed > 1s, but because we touched at 0.6s,
+            # the TTL should have been refreshed and data should still be present.
+            time.sleep(0.6)
+            retrieved_after_refresh = manager.get_dataframe("session1", "df1")
+            assert retrieved_after_refresh is not None
+
+            # Finally, allow TTL to expire without touching and verify it can disappear
+            time.sleep(1.2)
+            _ = manager.get_dataframe("session1", "df1")
+            # Depending on diskcache cleanup timing, it may be None; don't assert strictly
+        finally:
+            manager.close()
+
+    def test_sliding_ttl_refresh_survives_past_original_ttl(self, temp_dir):
+        """Ensure data survives past original TTL due to sliding refresh on access (retries instead of fixed sleeps)."""
+        manager = DiskCacheDataManager(
+            cache_dir=temp_dir,
+            ttl_seconds=1,
+        )
+
+        try:
+            data = pd.DataFrame({"A": [1, 2, 3]})
+            manager.set_dataframe("sessionX", "df", data)
+
+            # Access near mid-ttl to refresh
+            time.sleep(0.55)
+            refreshed = manager.get_dataframe("sessionX", "df")
+            assert refreshed is not None
+
+            # Poll for ~0.8s more (crosses original 1s TTL) ensuring it remains available
+            # If TTL didn't refresh, it would likely be gone shortly after 1s total elapsed
+            end_time = time.time() + 0.8
+            still_present = True
+            while time.time() < end_time:
+                if manager.get_dataframe("sessionX", "df") is None:
+                    still_present = False
+                    break
+                time.sleep(0.05)
+
+            assert still_present, (
+                "Data expired at or just after original TTL; sliding TTL did not take effect"
+            )
+
+            # Now stop touching and allow it to expire
+            time.sleep(1.2)
+            _maybe_none = manager.get_dataframe("sessionX", "df")
+            # Do not assert on final state due to backend cleanup timing variability
+        finally:
+            manager.close()
+
+    def test_sliding_ttl_refresh_fallback_set_when_touch_unavailable(
+        self, temp_dir, monkeypatch
+    ):
+        """Force touch() failure to exercise set() fallback and verify TTL effectively refreshed (survives past original TTL)."""
+        manager = DiskCacheDataManager(
+            cache_dir=temp_dir,
+            ttl_seconds=1,
+        )
+
+        try:
+            # Monkeypatch cache.touch to raise AttributeError to simulate older diskcache
+            original_touch = getattr(manager._cache, "touch", None)
+
+            def raising_touch(*args, **kwargs):  # noqa: ANN001, D401
+                raise AttributeError("touch not available")
+
+            if original_touch is not None:
+                monkeypatch.setattr(
+                    manager._cache, "touch", raising_touch, raising=True
+                )
+
+            data = pd.DataFrame({"A": [10, 20, 30]})
+            manager.set_dataframe("sessionY", "df", data)
+
+            # Access near mid-ttl to trigger fallback path in get_dataframe
+            time.sleep(0.55)
+            refreshed = manager.get_dataframe("sessionY", "df")
+            assert refreshed is not None
+
+            # Poll for ~0.8s more ensuring it remains available beyond original TTL
+            end_time = time.time() + 0.8
+            still_present = True
+            while time.time() < end_time:
+                if manager.get_dataframe("sessionY", "df") is None:
+                    still_present = False
+                    break
+                time.sleep(0.05)
+
+            assert still_present, (
+                "Data expired at or just after original TTL; fallback refresh did not take effect"
+            )
         finally:
             manager.close()
 

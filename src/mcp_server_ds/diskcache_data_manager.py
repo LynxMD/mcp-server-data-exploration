@@ -194,6 +194,15 @@ class DiskCacheDataManager(DataManager):
                         data_bytes, is_dataframe
                     )
 
+                    # Sliding TTL: refresh TTL on access and update metadata
+                    try:
+                        self._cache.touch(data_key, expire=self._ttl_seconds)
+                    except AttributeError:
+                        # Older diskcache versions may not have touch; fallback to set
+                        self._cache.set(data_key, data_bytes, expire=self._ttl_seconds)
+                    # Update last access and sizes in metadata
+                    self._update_session_metadata(session_id, df_name, len(data_bytes))
+
         return session_data
 
     def set_session_data(self, session_id: str, data: dict[str, Any]) -> None:
@@ -211,6 +220,12 @@ class DiskCacheDataManager(DataManager):
             is_dataframe = self._use_parquet and data_bytes.startswith(b"PAR1")
             data = self._deserialize_data(data_bytes, is_dataframe)
 
+            # Sliding TTL: refresh TTL on access and update metadata
+            try:
+                self._cache.touch(data_key, expire=self._ttl_seconds)
+            except AttributeError:
+                # Older diskcache versions may not have touch; fallback to set
+                self._cache.set(data_key, data_bytes, expire=self._ttl_seconds)
             # Update last access time
             self._update_session_metadata(session_id, df_name, len(data_bytes))
 
