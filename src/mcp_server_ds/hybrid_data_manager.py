@@ -53,6 +53,7 @@ class HybridDataManager(DataManager):
         cache_dir: str = "/tmp/mcp_cache",
         use_parquet: bool = True,
         max_disk_usage_percent: float = 90.0,
+        memory_max_item_bytes: int | None = None,
     ) -> None:
         """
         Initialize HybridDataManager.
@@ -68,6 +69,7 @@ class HybridDataManager(DataManager):
             max_disk_usage_percent: Maximum disk usage before cleanup
         """
         self._memory_threshold_percent = memory_threshold_percent
+        self._memory_max_item_bytes = memory_max_item_bytes
 
         # Initialize component DataManagers
         self._memory_manager = TTLInMemoryDataManager(
@@ -156,15 +158,15 @@ class HybridDataManager(DataManager):
             if self._memory_manager.has_session(session_id):
                 return True  # Already in memory
 
-            # Check if we can fit the session in memory
+            # Check if we can fit the session in memory, with eviction loop
             session_size = self._filesystem_manager.get_session_size(session_id)
-            if not self._memory_manager.can_fit_in_memory(session_id, session_size):
-                # Try to free up space
+            loop_guard = 0
+            while not self._memory_manager.can_fit_in_memory(session_id, session_size):
                 self._relieve_memory_pressure(session_size)
-
-                # Check again
-                if not self._memory_manager.can_fit_in_memory(session_id, session_size):
-                    return False  # Still can't fit
+                loop_guard += 1
+                if loop_guard > 10:
+                    # Prevent infinite loops; serve from disk-only
+                    return False
 
             # Load session from disk to memory
             self._loading_sessions.add(session_id)
@@ -252,13 +254,32 @@ class HybridDataManager(DataManager):
         with self._lock:
             # Check memory pressure before adding new data
             data_size = self._estimate_data_size(data)
-            if not self._memory_manager.can_fit_in_memory(session_id, data_size):
+            # Giant data safeguard
+            if (
+                self._memory_max_item_bytes is not None
+                and data_size > self._memory_max_item_bytes
+            ):
+                # Write to disk only for giant items
+                try:
+                    self._filesystem_manager.set_dataframe(session_id, df_name, data)
+                except Exception as e:  # noqa: BLE001
+                    # If disk also fails, escalate
+                    raise RuntimeError(f"Filesystem write failed for giant item: {e}")
+                return
+
+            # Eviction loop before attempting memory write
+            loop_guard = 0
+            while not self._memory_manager.can_fit_in_memory(session_id, data_size):
                 self._relieve_memory_pressure(data_size)
+                loop_guard += 1
+                if loop_guard > 10:
+                    break
 
             # Always attempt to write to both memory and filesystem, but degrade gracefully
             memory_error: Exception | None = None
             filesystem_error: Exception | None = None
 
+            # Attempt memory write regardless; underlying manager enforces its own limits
             try:
                 self._memory_manager.set_dataframe(session_id, df_name, data)
             except Exception as e:  # noqa: BLE001
@@ -269,7 +290,7 @@ class HybridDataManager(DataManager):
             except Exception as e:  # noqa: BLE001
                 filesystem_error = e
 
-            if memory_error and filesystem_error:
+            if (memory_error is not None) and (filesystem_error is not None):
                 raise RuntimeError(
                     f"Both memory and filesystem writes failed: memory={memory_error}, filesystem={filesystem_error}"
                 )
